@@ -31,7 +31,7 @@ VITE_GOOGLE_CLIENT_ID=你的用戶端ID.apps.googleusercontent.com
 5. 將公開 Client ID 放進 `.env.local`，或開發環境設定頁。
 6. 以測試使用者開站點「連接 Google Drive」，同意檔案存取後建立第一個帳戶。
 
-本程式採 Google Identity Services 的瀏覽器 token model，直接以 REST 呼叫 Drive，沒有 OAuth code exchange 後台。短期 token 僅存記憶體及 sessionStorage。同分頁重新載入會自動向 Google 驗證相同帳號後恢復，再同步 Drive；到期、失效或暫存不存在時提示手動重連。原本已開啟的舊版頁面沒有 token 暫存，升級後需先連接一次。不承諾無限期靜默登入，詳見 [授權恢復與期限](google-session.md)。[Google token model](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
+本程式採 Google Identity Services 的瀏覽器 token model，直接以 REST 呼叫 Drive，沒有 OAuth code exchange 後台。短期 token 僅存記憶體及 sessionStorage。同分頁重新載入會自動向 Google 驗證相同帳號後恢復，再同步 Drive；到期前五分鐘提供「續接 Google Drive」，點擊後沿用同帳號取得新的 Google 期限並保留表單；設定頁可隨時續接或明確切換帳號。到期、失效或暫存不存在時仍需使用者點擊；Google 可能要求重新登入。原本已開啟的舊版頁面沒有 token 暫存，升級後需先連接一次。不承諾無限期靜默登入，詳見 [授權恢復與期限](google-session.md)。[Google token model](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
 
 目前只申請 `https://www.googleapis.com/auth/drive.file`，存取由應用建立或使用者授權的檔案。這不是讀取使用者整個 Drive 的權限；本版也不要求 Picker 選取既有私人檔案。[Drive scope 說明](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 

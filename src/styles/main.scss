@@ -2090,3 +2090,18 @@ html {
     display: none;
   }
 }
+
+.authorization-notice {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  > div {
+    flex: 1 1 220px;
+  }
+  p {
+    margin: 4px 0 0;
+  }
+  .button {
+    flex-shrink: 0;
+  }
+}

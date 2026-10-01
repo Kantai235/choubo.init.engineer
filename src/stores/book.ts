@@ -25,6 +25,9 @@ export const useBookStore = defineStore('book', () => {
   const working = ref(false)
   const connecting = ref(false)
   const restoring = ref(false)
+  const renewing = ref(false)
+  const renewalDue = ref(false)
+  const authorizationExpiresAt = ref(0)
   const ready = ref(false)
   const error = ref('')
   const notice = ref('')
@@ -34,7 +37,9 @@ export const useBookStore = defineStore('book', () => {
   const clientId = ref(configuredClientId())
   const folderUrl = ref('')
   const credentials = new AuthSessionStorage()
-  let authExpiresAt = 0
+  let accountHint = credentials.readAccount(clientId.value)
+  const hasAccountHint = ref(!!accountHint)
+  let driveClient: DriveClient | undefined
   let restoreRetry = false
   let expiryTimer: ReturnType<typeof setTimeout> | undefined
   let active: LedgerSession | undefined
@@ -49,25 +54,27 @@ export const useBookStore = defineStore('book', () => {
     ),
   )
   const status = computed(() =>
-    restoring.value
-      ? '正在恢復 Google Drive'
-      : !identity.value
-        ? error.value
-          ? '需要重新連接'
-          : '尚未連接'
-        : !online.value
-          ? '離線，可編輯草稿'
-          : working.value || connecting.value
-            ? '正在同步'
-            : cached.value
-              ? '快取資料，等待核對'
-              : error.value
-                ? '需要處理'
-                : pending.value.length
-                  ? '有待確認提交'
-                  : ready.value
-                    ? '已連接 Google Drive'
-                    : '需要重新連接',
+    renewing.value
+      ? '正在續接 Google Drive'
+      : restoring.value
+        ? '正在恢復 Google Drive'
+        : !identity.value
+          ? error.value
+            ? '需要重新連接'
+            : '尚未連接'
+          : !online.value
+            ? '離線，可編輯草稿'
+            : working.value || connecting.value
+              ? '正在同步'
+              : cached.value
+                ? '快取資料，等待核對'
+                : error.value
+                  ? '需要處理'
+                  : pending.value.length
+                    ? '有待確認提交'
+                    : ready.value
+                      ? '已連接 Google Drive'
+                      : '需要重新連接',
   )
   function update(session: LedgerSession) {
     if (active !== session) return
@@ -79,34 +86,59 @@ export const useBookStore = defineStore('book', () => {
   }
   function forgetCredential() {
     const cleared = credentials.clear()
-    authExpiresAt = 0
+    authorizationExpiresAt.value = 0
     restoreRetry = false
     clearTimeout(expiryTimer)
+    renewalDue.value = false
     if (!cleared) notice.value = '瀏覽器無法清除分頁授權暫存，請關閉此分頁並清除網站資料。'
   }
   function expireCredential() {
     forgetCredential()
     ready.value = false
-    error.value = 'Google 授權已到期或失效，請到設定重新連接；草稿及待確認提交已保留'
+    error.value = 'Google 授權已到期或失效，請續接 Google Drive；草稿及待確認提交已保留'
+  }
+  function forgetAccount() {
+    accountHint = undefined
+    hasAccountHint.value = false
+    if (!credentials.clearAccount())
+      notice.value = '瀏覽器無法清除分頁帳號提示，請關閉此分頁並清除網站資料。'
+  }
+  function checkAuthorizationTime() {
+    if (!authorizationExpiresAt.value) return
+    if (Date.now() >= authorizationExpiresAt.value) expireCredential()
+    else renewalDue.value = authorizationExpiresAt.value - Date.now() <= 5 * 60_000
   }
   function scheduleExpiry(expiresAt: number) {
-    authExpiresAt = expiresAt
+    authorizationExpiresAt.value = expiresAt
     clearTimeout(expiryTimer)
-    // Recheck after background throttling, and avoid timer overflow.
+    checkAuthorizationTime()
+    if (!authorizationExpiresAt.value) return
+    // Only show a reminder. GIS renewal must be initiated by an explicit click.
+    const delay = expiresAt - Date.now() - (renewalDue.value ? 0 : 5 * 60_000)
     expiryTimer = setTimeout(
-      () => {
-        if (Date.now() >= expiresAt) expireCredential()
-        else scheduleExpiry(expiresAt)
-      },
-      Math.min(Math.max(0, expiresAt - Date.now()), 2_147_483_647),
+      () => scheduleExpiry(expiresAt),
+      Math.min(Math.max(0, delay), 2_147_483_647),
     )
+  }
+  function rememberAuthorization(
+    auth: Pick<AuthSession, 'token' | 'expiresAt'>,
+    user: Identity,
+    oauthClientId: string,
+  ) {
+    if (!credentials.save({ version: 1, clientId: oauthClientId, ownerId: user.id, ...auth }))
+      notice.value = '瀏覽器無法保存分頁授權，這次連線仍可使用，重整後需重新連接。'
+    accountHint = { version: 1, clientId: oauthClientId, ownerId: user.id, email: user.email }
+    hasAccountHint.value = true
+    credentials.saveAccount(accountHint)
+    scheduleExpiry(auth.expiresAt)
   }
   async function run(action: (session: LedgerSession) => Promise<unknown>, message = '') {
     const session = active
-    if (authExpiresAt && Date.now() >= authExpiresAt) expireCredential()
+    if (authorizationExpiresAt.value && Date.now() >= authorizationExpiresAt.value)
+      expireCredential()
     if (!session || !ready.value) throw new Error('請先連接 Google Drive')
     if (!online.value) throw new Error('目前離線，請保留草稿後再提交')
-    if (working.value) throw new Error('正在處理上一項操作，請稍候')
+    if (working.value || renewing.value) throw new Error('正在處理上一項操作，請稍候')
     working.value = true
     error.value = ''
     notice.value = ''
@@ -130,10 +162,13 @@ export const useBookStore = defineStore('book', () => {
     epoch++
     abort?.abort()
     active = undefined
+    driveClient = undefined
+    renewing.value = false
+    renewalDue.value = false
     broadcast?.close()
     clearTimeout(timer)
     clearTimeout(expiryTimer)
-    authExpiresAt = 0
+    authorizationExpiresAt.value = 0
     restoreRetry = false
     restoring.value = false
     identity.value = null
@@ -152,6 +187,7 @@ export const useBookStore = defineStore('book', () => {
     savedOwner?: string,
   ) {
     const current = epoch
+    const oauthClientId = clientId.value
     connecting.value = true
     error.value = ''
     const controller = new AbortController()
@@ -166,9 +202,7 @@ export const useBookStore = defineStore('book', () => {
       if (savedOwner && savedOwner !== user.id)
         throw new DriveError('Google 帳號與分頁暫存不符，請重新連接', 401)
       if (Date.now() >= auth.expiresAt) throw new DriveError('Google 授權已到期，請重新連接', 401)
-      if (!credentials.save({ version: 1, clientId: clientId.value, ownerId: user.id, ...auth }))
-        notice.value = '瀏覽器無法保存分頁授權，這次連線仍可使用，重整後需重新連接。'
-      scheduleExpiry(auth.expiresAt)
+      rememberAuthorization(auth, user, oauthClientId)
       identity.value = user
       const saved = localStorage.getItem(bindingKey(user.id))
       if (saved) {
@@ -200,6 +234,7 @@ export const useBookStore = defineStore('book', () => {
         controller.signal,
       )
       active = session
+      driveClient = client
       await session.sync()
       if (current !== epoch) return
       if (Date.now() >= auth.expiresAt) throw new DriveError('Google 授權已到期，請重新連接', 401)
@@ -209,7 +244,7 @@ export const useBookStore = defineStore('book', () => {
       if ('BroadcastChannel' in window) {
         broadcast = new BroadcastChannel(`choubo:${user.id}:${opened.cloud.book.id}`)
         broadcast.onmessage = () => {
-          if (!working.value) void sync().catch(() => undefined)
+          if (!working.value && !renewing.value) void sync().catch(() => undefined)
         }
       }
     } catch (caught) {
@@ -231,11 +266,75 @@ export const useBookStore = defineStore('book', () => {
       }
     }
   }
-  async function connect() {
+  async function connect(): Promise<void> {
+    if (connecting.value || renewing.value || working.value) return
+    if (identity.value && active && driveClient) return renewAuthorization()
+    const hint = accountHint
     clearSession()
     notice.value = ''
-    forgetCredential() // Clear before the account picker, even if it is cancelled.
-    await establish(() => requestToken(clientId.value))
+    forgetCredential()
+    await establish(
+      () =>
+        requestToken(clientId.value, {
+          selectAccount: !hint,
+          loginHint: hint?.email,
+        }),
+      hint?.ownerId,
+    )
+  }
+  async function switchAccount() {
+    clearSession()
+    notice.value = ''
+    forgetCredential()
+    forgetAccount() // Clear before the picker, even when the user cancels.
+    await establish(() => requestToken(clientId.value, { selectAccount: true }))
+  }
+  async function renewAuthorization(): Promise<void> {
+    if (renewing.value || working.value || connecting.value) return
+    const session = active,
+      client = driveClient,
+      user = identity.value,
+      controller = abort
+    if (!session || !client || !user || !controller) return connect()
+    if (!online.value) {
+      error.value = '目前離線，請保留草稿，恢復網路後再續接'
+      return
+    }
+    const current = epoch,
+      oauthClientId = clientId.value
+    let installed = false
+    renewing.value = true
+    error.value = ''
+    notice.value = ''
+    try {
+      const auth = await requestToken(oauthClientId, { loginHint: user.email })
+      if (current !== epoch || active !== session) return
+      const candidate = new DriveClient(auth.token, auth.expiresAt, controller.signal)
+      const verified = await candidate.identity()
+      if (current !== epoch || active !== session) return
+      if (verified.id !== user.id)
+        throw new Error('Google 回傳不同帳號，續接已取消；請使用「切換帳號」另行連接')
+      // Keep the LedgerSession and mounted editors; only replace a verified grant.
+      client.replaceAuthorization(auth.token, auth.expiresAt)
+      installed = true
+      rememberAuthorization(auth, verified, oauthClientId)
+      identity.value = verified
+      ready.value = true
+      await session.sync()
+      if (current !== epoch || active !== session) return
+      checkAuthorizationTime()
+      update(session)
+      if (ready.value && !notice.value) notice.value = 'Google Drive 授權已續接，編輯內容已保留'
+    } catch (caught) {
+      if (current !== epoch || active !== session) return
+      checkAuthorizationTime()
+      // Candidate errors do not invalidate an old, still usable grant.
+      // A 401 after installing the candidate must disable cloud submissions.
+      if (caught instanceof DriveError && caught.status === 401 && installed) expireCredential()
+      error.value = caught instanceof Error ? caught.message : 'Google 續接未完成，請再試一次'
+    } finally {
+      if (current === epoch) renewing.value = false
+    }
   }
   async function restoreConnection() {
     if (connecting.value || ready.value) return
@@ -260,6 +359,7 @@ export const useBookStore = defineStore('book', () => {
     error.value = ''
     notice.value = '已登出，草稿保留在原使用者的本機空間'
     forgetCredential()
+    forgetAccount()
   }
   async function sync() {
     if (active && ready.value) await run((s) => s.sync())
@@ -270,7 +370,8 @@ export const useBookStore = defineStore('book', () => {
     drafts.value = active.drafts
     clearTimeout(timer)
     timer = setTimeout(() => {
-      if (online.value && ready.value && !working.value) void sync().catch(() => undefined)
+      if (online.value && ready.value && !working.value && !renewing.value)
+        void sync().catch(() => undefined)
     }, 1200)
     return draft
   }
@@ -309,7 +410,9 @@ export const useBookStore = defineStore('book', () => {
   }
   function saveConfig(id: string) {
     localStorage.setItem('choubo:google-client-id', id.trim())
-    clientId.value = configuredClientId()
+    const configured = configuredClientId()
+    if (clientId.value !== configured) disconnect()
+    clientId.value = configured
     void preloadGoogle()
   }
   function exportData() {
@@ -330,9 +433,16 @@ export const useBookStore = defineStore('book', () => {
   }
   function initEvents() {
     const foreground = () => {
-      if (authExpiresAt && Date.now() >= authExpiresAt) expireCredential()
-      if (restoreRetry && online.value && !connecting.value) void restoreConnection()
-      if (document.visibilityState === 'visible' && ready.value && online.value && !working.value)
+      checkAuthorizationTime()
+      if (restoreRetry && online.value && !connecting.value && !renewing.value)
+        void restoreConnection()
+      if (
+        document.visibilityState === 'visible' &&
+        ready.value &&
+        online.value &&
+        !working.value &&
+        !renewing.value
+      )
         void sync().catch(() => undefined)
     }
     const onOnline = () => {
@@ -363,7 +473,11 @@ export const useBookStore = defineStore('book', () => {
     drafts,
     visibleDrafts,
     pending,
-    working,
+    working: computed(() => working.value || renewing.value),
+    renewing,
+    renewalDue,
+    authorizationExpiresAt,
+    hasAccountHint,
     connecting,
     restoring,
     ready,
@@ -377,6 +491,8 @@ export const useBookStore = defineStore('book', () => {
     accountBalances,
     folderUrl,
     connect,
+    renewAuthorization,
+    switchAccount,
     restoreConnection,
     disconnect,
     sync,

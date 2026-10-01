@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import Dialog from 'primevue/dialog'
+import AuthorizationNotice from './AuthorizationNotice.vue'
 import { groups, newId, type Account, type AccountView } from '../domain/model'
 import { currencies } from '../domain/seeds'
 import { useBookStore } from '../stores/book'
@@ -55,6 +56,7 @@ async function save() {
     @update:visible="emit('close')"
   >
     <form class="form-stack" @submit.prevent="save">
+      <AuthorizationNotice in-editor />
       <label
         >帳戶名稱<input
           v-model="account.name"
@@ -129,7 +131,7 @@ async function save() {
           @click="emit('close')"
         >
           取消</button
-        ><button class="button primary" :disabled="store.working || !store.online">
+        ><button class="button primary" :disabled="store.working || !store.online || !store.ready">
           {{ store.working ? '正在保存…' : '保存帳戶' }}
         </button>
       </div>

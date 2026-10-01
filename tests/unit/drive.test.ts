@@ -115,3 +115,28 @@ describe('Drive REST contracts', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 })
+
+describe('verified same-account token replacement', () => {
+  it('allows an expired client to use a fresh grant without reconstructing the ledger', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ files: [] }))
+    vi.stubGlobal('fetch', fetcher)
+    const existing = new DriveClient(
+      'expired-test-credential',
+      Date.now() - 1,
+      new AbortController().signal,
+    )
+    existing.replaceAuthorization('renewed-test-credential', Date.now() + 3600_000)
+    await existing.list('parent')
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer renewed-test-credential')
+  })
+  it('rejects invalid replacement without discarding an unexpired grant', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ files: [] }))
+    vi.stubGlobal('fetch', fetcher)
+    const existing = client()
+    expect(() => existing.replaceAuthorization('invalid-test-credential', Date.now() - 1)).toThrow(
+      '授權已到期',
+    )
+    await existing.list('parent')
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer memory-only')
+  })
+})

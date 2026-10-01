@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import Dialog from 'primevue/dialog'
+import AuthorizationNotice from './AuthorizationNotice.vue'
 import AppIcon from './AppIcon.vue'
 import { useBookStore } from '../stores/book'
 import { newId, kinds, kindNames, type Transaction } from '../domain/model'
@@ -155,6 +156,7 @@ onBeforeUnmount(() => {
     @update:visible="close"
   >
     <form class="form-stack" @submit.prevent="submit">
+      <AuthorizationNotice in-editor />
       <p v-if="pending" class="inline-error">
         這筆內容正在等待提交確認，暫停修改。可回到草稿頁查回／重試。
       </p>

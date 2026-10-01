@@ -1,6 +1,6 @@
 # 網頁記帳程式系統分析與需求報告
 
-版本：v0.5 已確認需求整合（短期授權恢復更新）｜更新日期：2026 年 10 月 2 日｜適用對象：產品規劃、前端開發、測試人員。
+版本：v0.6 已確認需求整合（純前端同帳號續接）｜更新日期：2026 年 10 月 2 日｜適用對象：產品規劃、前端開發、測試人員。
 
 本報告為網頁記帳程式的開發需求基準，涵蓋帳戶、六種紀錄、多筆分類明細、信用帳單、回饋、週期與分期、資料儲存及同步。系統採無後台的純前端架構，正式使用必須連接使用者自己的 Google Drive，正式帳務以本人 My Drive 根目錄下專用資料夾的有效資料為準。localStorage 用於快速載入、有限快取、偏好與受保護暫存，相關可攜資料亦非同步同步至 Drive；短期 access token 僅存記憶體與 sessionStorage，同分頁重整先向 Google 驗證身分再恢復帳本。新紀錄須經 Drive 確認保存及必要驗證後才正式入帳。
 
@@ -586,11 +586,19 @@ localStorage 的用途是加快載入及保護尚未完成的工作，完整正�
 
 上線前需建立 Google Cloud 專案、啟用 Drive API、配置 OAuth 同意畫面及允許的網站來源，區分測試與正式環境，並完成所用權限要求的驗證。這是開發部署工作，不是要求使用者自行建立 Google Cloud 專案。
 
-sessionStorage 沒有固定天數 TTL，通常維持到分頁關閉，重新整理可保留；瀏覽器還原分頁可能恢復內容，不能保證永久保存或關站立即抹除。實際可用時間以 Google 回傳 `expires_in` 換算的原始 `expiresAt` 為準，重整不可重新起算。沒有有效暫存便由使用者重新連接，不自動彈窗。[MDN sessionStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage)
+sessionStorage 沒有固定天數 TTL，通常維持到分頁關閉，重新整理可保留；瀏覽器還原分頁可能恢復內容，不能保證永久保存或關站立即抹除。實際可用時間以 Google 回傳 `expires_in` 換算的原始 `expiresAt` 為準，重整不可重新起算；僅在使用者點擊續接、Google 核發新 token 並確認同一帳號後才更新期限。沒有有效暫存便由使用者重新連接，不自動彈窗。[MDN sessionStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage)
 
-過期、Google 回傳 401 或帳號不符時刪除分頁授權；暫時網路錯誤保留未過期授權並稍後重試身分驗證。sessionStorage 不可用時允許當次記憶體連線，清楚告知重整需要重連。登出僅清除此分頁連線；解除 Google 授權需至 Google 帳號操作；其他既有分頁有各自的授權狀態。完整工程流程見 [分頁授權恢復](../development/google-session.md)。
+過期、Google 回傳 401 或帳號不符時刪除分頁授權；暫時網路錯誤保留未過期授權並稍後重試身分驗證。sessionStorage 不可用時允許當次記憶體連線，清楚告知重整需要重連。sessionStorage 另可保留 clientId、ownerId、已驗證 email 的帳號提示（不含 token），到期仍保留以協助一鍵續接，不能當成身分驗證，也不進可攜偏好／匯出。登出及切換帳號一併清除提示；解除 Google 授權需至 Google 帳號操作；其他既有分頁有各自的授權狀態。完整工程流程見 [分頁授權恢復](../development/google-session.md)。
 
 token 過期時保留草稿及待確認提交，顯示「重新連接 Google Drive」；停止正式入帳及自動帳務，不反覆自動彈出授權視窗。網站不部署授權碼交換後台，也不保存 refresh token。sessionStorage 與 localStorage 都可被同來源程式讀取，分頁暫存不是 XSS 防護；僅允許短期 token 進入獨立的 sessionStorage key，不得混入帳務、偏好或可攜同步資料。[OWASP HTML5 Security](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)
+
+#### 16.1.1 純前端盡量延續使用（2026-10-02 確認）
+
+網站使用 Google 實際核發的完整期限，不加上較短的自訂登入期限；Google 的 token API 沒有可設定為永久或更長有效期的參數。到期前五分鐘僅顯示續接提示，不自動彈窗。使用者按「續接 Google Drive」或設定頁「續接目前帳號」時，使用 `prompt: ''` 與已驗證 email 的 `login_hint`，盡量省略再次選帳號；Google 仍可要求登入或授權確認。`prompt: 'none'` 不代表可以跳過使用者手勢或保證靜默續期。[Google token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)、[GIS 參數](https://developers.google.com/identity/oauth2/web/reference/js-reference)
+
+新 token 先呼叫 Google 驗證穩定 ownerId，必須與原帳號相同，再替換 Drive 連線授權並同步帳本。續接不重建編輯器、不清空未保存的帳戶欄位或交易明細，也不自動正式提交草稿及未知結果 pending。續接期間禁止重複 OAuth／正式提交；取消、彈窗阻擋或候選授權失敗時，原未到期 token 保留至原期限。若原 token 已到期或實際 API 回傳 401，仍停止正式提交。
+
+「切換帳號」與「續接」分開：切換才清除舊憑證、帳號提示與畫面後要求 Google 帳號選擇；新舊回應仍受 epoch 隔離。續接若回傳不同 ownerId，丟棄候選 token，保留原帳號畫面與編輯內容並提示明確切換。設定頁顯示 Google 授權到期時間；帳戶及記帳編輯視窗都提供到期續接入口，涵蓋 360 px 與亮／暗模式。不承諾關站續期、跨分頁授權共用或永久免登入。
 
 ### 16.2 第一次連接與帳本歸屬
 
@@ -866,7 +874,7 @@ M1 是可試用的最小版本，不是全部需求已完成。完整交付需�
 | AT57 | 同一已驗證帳號重開且有相容快取 | 先顯示上次雲端確認值與時間及核對中，背景拉取變更；未確認新增不混入正式餘額 |
 | AT58 | 編輯多明細草稿，雲端自動保存成功 | 顯示草稿已同步；跨裝置可恢復，正式餘額、帳單、回饋與消費次數均不變 |
 | AT59 | 草稿雲端已存 v1，本機 v2 尚未上傳而清快取 | 只清一般快取；保留 v2。明確捨棄或相同版本確認保存前不可自動刪除 |
-| AT60 | 同分頁重整、到期／失效、登出／切帳號及關站再開 | 有效短期 token 可從 sessionStorage 恢復；先向 Google 驗證原帳號再讀快取並同步，不延長原期限。過期／失效／登出／切帳號清除；localStorage、Drive、匯出、日誌及 GitHub 無 token，未驗證不顯示帳務 |
+| AT60 | 同分頁重整、到期／失效、登出／切帳號及關站再開 | 有效短期 token 可從 sessionStorage 恢復；先向 Google 驗證原帳號再讀快取並同步，不延長原期限。過期／失效／登出／切帳號清除；localStorage、Drive、匯出、日誌及 GitHub 無 token，未驗證不顯示帳務；同帳號點擊續接核對 ownerId 後更新期限且保留編輯內容 |
 | AT61 | 清空一般快取但留下舊增量游標 | 由相符快照及必要批次重建，再追變更；不能只拉舊游標後資料而漏掉歷史帳目 |
 | AT62 | 首次分頁掃描期間另一裝置新增交易 | 先取得起點游標、掃描後補讀變更，新增只出現一次且不漏帳 |
 | AT63 | 兩裝置各退 80，原單剩餘可退 100 | 不同 operationId 仍檢查共同上限；保留候選資料、要求處理，不把 160 全列合法退本 |

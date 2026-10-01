@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
-import { AUTH_SESSION_KEY } from '../../src/infrastructure/auth-session'
+import { AUTH_SESSION_KEY, AUTH_ACCOUNT_KEY } from '../../src/infrastructure/auth-session'
 
 type File = {
   id: string
@@ -32,6 +32,10 @@ async function installDrive(page: Page) {
     rootMetadataReads: 0,
     files,
     oauthCalls: 0,
+    oauthRequests: [] as { prompt: string; login_hint?: string }[],
+    token: 'test-memory-token',
+    oauthWait: undefined as Promise<void> | undefined,
+    authorizations: [] as string[],
     cancelOAuth: false,
     expiresIn: 3600,
     identityStatus: 200,
@@ -39,10 +43,15 @@ async function installDrive(page: Page) {
     identityWait: undefined as Promise<void> | undefined,
     requests: [] as string[],
   }
-  await page.exposeFunction('mockAuthorize', () => {
-    control.oauthCalls++
-    return { cancel: control.cancelOAuth, expiresIn: control.expiresIn }
-  })
+  await page.exposeFunction(
+    'mockAuthorize',
+    async (options: { prompt: string; login_hint?: string }) => {
+      control.oauthCalls++
+      control.oauthRequests.push(options)
+      await control.oauthWait
+      return { cancel: control.cancelOAuth, expiresIn: control.expiresIn, token: control.token }
+    },
+  )
   await page.addInitScript(() => {
     localStorage.setItem('choubo:google-client-id', 'test.apps.googleusercontent.com')
     Object.assign(window, {
@@ -53,15 +62,18 @@ async function installDrive(page: Page) {
               callback: (data: unknown) => void
               error_callback: (data: unknown) => void
             }) => ({
-              requestAccessToken: async () => {
+              requestAccessToken: async (options: { prompt: string; login_hint?: string }) => {
                 const mock = await (
                   window as unknown as {
-                    mockAuthorize: () => Promise<{ cancel: boolean; expiresIn: number }>
+                    mockAuthorize: (options: {
+                      prompt: string
+                      login_hint?: string
+                    }) => Promise<{ cancel: boolean; expiresIn: number; token: string }>
                   }
-                ).mockAuthorize()
+                ).mockAuthorize(options)
                 if (mock.cancel) return config.error_callback({ type: 'popup_closed' })
                 config.callback({
-                  access_token: 'test-memory-token',
+                  access_token: mock.token,
                   scope: 'https://www.googleapis.com/auth/drive.file',
                   expires_in: mock.expiresIn,
                 })
@@ -83,6 +95,7 @@ async function installDrive(page: Page) {
         headers: { 'Access-Control-Allow-Origin': '*' },
       })
     control.requests.push(url.pathname)
+    control.authorizations.push(request.headers().authorization ?? '')
     if (control.apiStatus !== 200) return respond({ error: 'unauthorized' }, control.apiStatus)
     if (url.pathname.endsWith('/about')) {
       await control.identityWait
@@ -92,7 +105,8 @@ async function installDrive(page: Page) {
         user: {
           permissionId: control.ownerId,
           displayName: '小林',
-          emailAddress: 'alice@example.test',
+          emailAddress:
+            control.ownerId === 'alice-user' ? 'alice@example.test' : 'bob@example.test',
         },
       })
     }
@@ -326,7 +340,7 @@ test('switching Google accounts hides all previous balances, drafts, and dialogs
   mock.ownerId = 'bob-user'
   // The provider returns a separate Drive space for the newly selected owner.
   mock.files.clear()
-  await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
+  await page.getByRole('button', { name: '切換帳號', exact: true }).click()
   await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
   await page.getByRole('link', { name: '總覽', exact: true }).click()
   await expect(page.locator('.balance-number')).toHaveText('0')
@@ -674,6 +688,7 @@ test('session restore verifies Google before showing cache, preserves expiry and
   expect(exported.operations).toHaveLength(1)
   expect(JSON.stringify(exported)).not.toContain('test-memory-token')
   expect(JSON.stringify(exported)).not.toContain('auth-session')
+  expect(JSON.stringify(exported)).not.toContain('auth-account')
 })
 
 for (const reason of ['expired', 'revoked', 'owner-mismatch'] as const) {
@@ -755,7 +770,7 @@ test('expiry while open stops posting, keeps the draft, and supports explicit re
   expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
   await page.getByRole('button', { name: '保留草稿', exact: true }).click()
   await page.getByRole('link', { name: '設定', exact: true }).click()
-  await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
+  await page.getByRole('button', { name: '續接目前帳號', exact: true }).click()
   await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
   expect(mock.oauthCalls).toBe(2)
   await page.getByRole('link', { name: /^草稿/ }).first().click()
@@ -792,7 +807,7 @@ test('cancelled account switch removes the previous credential before opening OA
   await connect(page)
   await page.getByRole('link', { name: '設定', exact: true }).click()
   mock.cancelOAuth = true
-  await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
+  await page.getByRole('button', { name: '切換帳號', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Google 授權視窗已關閉')
   expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
   mock.requests.length = 0
@@ -849,4 +864,223 @@ test('an OAuth response without a usable lifetime is rejected instead of inventi
   await expect(page.getByRole('alert')).toContainText('Google 授權未完成')
   expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
   expect(mock.requests).toEqual([])
+})
+
+async function makeRenewalDue(page: Page) {
+  const expiresAt = await page.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key)!).expiresAt,
+    AUTH_SESSION_KEY,
+  )
+  await page.clock.setFixedTime(expiresAt - 4 * 60_000)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  return expiresAt as number
+}
+
+test('one-click renewal extends only the Google-issued expiry and keeps a mobile transaction editor intact', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await connect(page)
+  await createAccount(page)
+  await page.setViewportSize({ width: 360, height: 800 })
+  await openExpense(page)
+  const oldExpiry = await makeRenewalDue(page)
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('Google 授權即將到期', { exact: true })).toBeVisible()
+  expect(mock.oauthCalls).toBe(1) // Foreground and timer events never open OAuth.
+  await assertReadableSurface(page)
+  await page.screenshot({ path: 'test-results/renew-dark-mobile-editor.png', fullPage: true })
+  await expect(dialog.getByRole('button', { name: '續接 Google Drive', exact: true })).toBeEnabled()
+  mock.token = 'renewed-test-token'
+  mock.requests.length = 0
+  mock.authorizations.length = 0
+  await dialog.getByRole('button', { name: '續接 Google Drive', exact: true }).click()
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await expect(page.getByLabel('第 1 行名稱', { exact: true })).toHaveValue('早餐三明治')
+  await expect(page.getByLabel('第 1 行金額', { exact: true })).toHaveValue('60')
+  expect(mock.oauthRequests).toEqual([
+    { prompt: 'select_account' },
+    { prompt: '', login_hint: 'alice@example.test' },
+  ])
+  const renewed = await page.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key)!),
+    AUTH_SESSION_KEY,
+  )
+  expect(renewed.expiresAt).toBe(oldExpiry - 4 * 60_000 + 3600_000)
+  expect(renewed.token).toBe('renewed-test-token')
+  expect(mock.requests[0]).toBe('/drive/v3/about')
+  expect(mock.authorizations.every((h) => h === 'Bearer renewed-test-token')).toBe(true)
+  await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(
+    [...mock.files.values()].filter((f) => f.appProperties?.role === 'operation'),
+  ).toHaveLength(2)
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
+    'renewed-test-token',
+  )
+  expect(JSON.stringify([...mock.files.values()])).not.toContain('renewed-test-token')
+})
+
+test('same-account renewal keeps unsaved account settings and cancellation keeps an unexpired grant', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await page.getByRole('button', { name: '編輯日常現金', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
+  await page.getByLabel('帳戶名稱', { exact: true }).fill('尚未保存的名稱')
+  const oldExpiry = await makeRenewalDue(page)
+  mock.cancelOAuth = true
+  await dialog.getByRole('button', { name: '續接 Google Drive', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Google 授權視窗已關閉')
+  await expect(page.getByLabel('帳戶名稱', { exact: true })).toHaveValue('尚未保存的名稱')
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(sessionStorage.getItem(key)!).expiresAt,
+      AUTH_SESSION_KEY,
+    ),
+  ).toBe(oldExpiry)
+  await expect(page.getByRole('button', { name: '保存帳戶', exact: true })).toBeEnabled()
+  mock.cancelOAuth = false
+  mock.identityStatus = 401
+  await dialog.getByRole('button', { name: '續接 Google Drive', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Google 授權已到期')
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(sessionStorage.getItem(key)!).expiresAt,
+      AUTH_SESSION_KEY,
+    ),
+  ).toBe(oldExpiry)
+  await expect(page.getByRole('button', { name: '保存帳戶', exact: true })).toBeEnabled()
+  mock.identityStatus = 200
+  await dialog.getByRole('button', { name: '續接 Google Drive', exact: true }).click()
+  await expect(dialog.locator('.authorization-notice')).not.toBeVisible()
+  await expect(page.getByLabel('帳戶名稱', { exact: true })).toHaveValue('尚未保存的名稱')
+  await page.getByRole('button', { name: '保存帳戶', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '尚未保存的名稱', exact: true })).toBeVisible()
+})
+
+test('renewal rejects a different Google owner before replacing the active token or reading their book', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  const oldExpiry = await makeRenewalDue(page)
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: '續接 Google Drive', exact: true })).toBeEnabled()
+  mock.ownerId = 'bob-user'
+  mock.token = 'wrong-owner-test-token'
+  mock.requests.length = 0
+  await dialog.getByRole('button', { name: '續接 Google Drive', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Google 回傳不同帳號')
+  expect(mock.requests).toEqual(['/drive/v3/about'])
+  const saved = await page.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key)!),
+    AUTH_SESSION_KEY,
+  )
+  expect(saved.expiresAt).toBe(oldExpiry)
+  expect(saved.token).toBe('test-memory-token')
+  expect(saved.ownerId).toBe('alice-user')
+  await expect(page.getByLabel('第 1 行名稱', { exact: true })).toHaveValue('早餐三明治')
+  expect(JSON.stringify([...mock.files.values()])).not.toContain('bob-user')
+})
+
+test('expired reload retains only a same-account hint, then a click reconnects and switching removes that hint', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await page.evaluate((key) => {
+    const value = JSON.parse(sessionStorage.getItem(key)!)
+    value.expiresAt = Date.now() - 1
+    sessionStorage.setItem(key, JSON.stringify(value))
+  }, AUTH_SESSION_KEY)
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('授權已到期')
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  const hint = await page.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key)!),
+    AUTH_ACCOUNT_KEY,
+  )
+  expect(hint).toEqual({
+    version: 1,
+    clientId: 'test.apps.googleusercontent.com',
+    ownerId: 'alice-user',
+    email: 'alice@example.test',
+  })
+  await expect(page.locator('.balance-number')).not.toBeVisible()
+  expect(mock.oauthCalls).toBe(1)
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  await expect(page.getByRole('button', { name: '登出', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  expect(mock.oauthRequests.at(-1)).toEqual({ prompt: '', login_hint: 'alice@example.test' })
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  mock.cancelOAuth = true
+  await page.getByRole('button', { name: '切換帳號', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('授權視窗已關閉')
+  expect(mock.oauthRequests.at(-1)).toEqual({ prompt: 'select_account' })
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_ACCOUNT_KEY)).toBeNull()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+})
+
+test('a late renewal after logout cannot save a new credential or hint', async ({ page }) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  let release!: () => void
+  mock.oauthWait = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.getByRole('button', { name: '續接目前帳號', exact: true }).click()
+  await expect(page.getByText('正在續接 Google Drive', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '登出', exact: true }).click()
+  release()
+  await expect(page.getByText('尚未連接', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('尚未連接', { exact: true })).toBeVisible()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_ACCOUNT_KEY)).toBeNull()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+})
+
+test('renewal does not automatically post an unresolved pending operation', async ({ page }) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  mock.failOperations = true
+  await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible()
+  await page.getByRole('button', { name: '保留草稿', exact: true }).click()
+  const pendingBefore = await page.evaluate(() =>
+    Object.entries(localStorage)
+      .filter(([key]) => key.includes(':pending:'))
+      .sort(),
+  )
+  expect(pendingBefore.length).toBeGreaterThan(0)
+  mock.failOperations = false
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  await page.getByRole('button', { name: '續接目前帳號', exact: true }).click()
+  await expect(
+    page.getByText('Google Drive 授權已續接，編輯內容已保留', { exact: true }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(() =>
+      Object.entries(localStorage)
+        .filter(([key]) => key.includes(':pending:'))
+        .sort(),
+    ),
+  ).toEqual(pendingBefore)
+  expect(
+    [...mock.files.values()].filter((f) => f.appProperties?.role === 'operation'),
+  ).toHaveLength(1)
+  await page.getByRole('link', { name: /^草稿/ }).first().click()
+  await expect(page.getByRole('heading', { name: '等待確認的提交' })).toBeVisible()
 })

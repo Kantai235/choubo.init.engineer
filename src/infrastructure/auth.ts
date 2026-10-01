@@ -13,7 +13,7 @@ type GoogleApi = {
         scope: string
         callback: (value: TokenResult) => void
         error_callback: (error: { type: string }) => void
-      }): { requestAccessToken(options: { prompt: string }): void }
+      }): { requestAccessToken(options: { prompt: string; login_hint?: string }): void }
     }
   }
 }
@@ -51,10 +51,12 @@ export const preloadGoogle = () => loadGoogle().catch(() => undefined)
 // Only AuthSessionStorage may persist this short-lived credential, after identity verification.
 export async function requestToken(
   clientId: string,
+  options: { selectAccount?: boolean; loginHint?: string } = {},
 ): Promise<{ token: string; expiresAt: number }> {
   if (!clientId.endsWith('.apps.googleusercontent.com'))
     throw new Error('請先設定 Google OAuth 網頁用戶端 ID')
-  await loadGoogle()
+  // Keep requestAccessToken within the click's activation when GIS is preloaded.
+  if (!window.google) await loadGoogle()
   return new Promise((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -78,6 +80,9 @@ export async function requestToken(
       },
       error_callback: () => reject(new Error('Google 授權視窗已關閉或被瀏覽器阻擋，請重新連接')),
     })
-    client.requestAccessToken({ prompt: 'select_account' })
+    client.requestAccessToken({
+      prompt: options.selectAccount ? 'select_account' : '',
+      ...(!options.selectAccount && options.loginHint ? { login_hint: options.loginHint } : {}),
+    })
   })
 }

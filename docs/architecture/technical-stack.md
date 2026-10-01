@@ -1,8 +1,8 @@
 # 技術選型與實作架構
 
-版本：v0.2 技術規劃與分頁授權恢復｜日期：2026 年 10 月 2 日｜需求基準：[系統分析與需求報告 v0.5](../requirements/system-analysis-and-requirements.md)。
+版本：v0.3 技術規劃與授權續接｜日期：2026 年 10 月 2 日｜需求基準：[系統分析與需求報告 v0.6](../requirements/system-analysis-and-requirements.md)。
 
-本文記錄前期討論的技術建議，作為專案初始化與實作規劃依據。產品功能與帳務語意以 v0.5 為準；具體套件版本及整合可行性須經 M0 驗證。本文是前期規劃，不代表各模組已完成；2026-10-02 已開始 0.1.0 實作，現況請見 [實作進度](../development/progress.md)。PrimeVue 實作固定採 MIT 授權的 4.5.5／主題 2.0.3，具體版本以 lockfile 為準。
+本文記錄前期討論的技術建議，作為專案初始化與實作規劃依據。產品功能與帳務語意以 v0.6 為準；具體套件版本及整合可行性須經 M0 驗證。本文是前期規劃，不代表各模組已完成；2026-10-02 已開始 0.1.0 實作，現況請見 [實作進度](../development/progress.md)。PrimeVue 實作固定採 MIT 授權的 4.5.5／主題 2.0.3，具體版本以 lockfile 為準。
 
 ## 1 技術組合
 
@@ -49,7 +49,7 @@ PrimeVue 用於通用元件，記帳專屬元件再做封裝。樣式優先透�
 | 共用樣式 | SCSS 模組與 mixin，以 `@use` 引入 |
 | 顏色及可切換設定 | CSS 自訂變數；若後續加入主題切換，可在執行時更換 |
 | 元件庫主題 | 以 PrimeVue 的 tokens 對應專案共用視覺設定 |
-| 響應式介面 | 以手機操作為優先，依 v0.5 驗收 360 px 寬度下的完整記帳流程 |
+| 響應式介面 | 以手機操作為優先，依 v0.6 驗收 360 px 寬度下的完整記帳流程 |
 
 SCSS 於建置時編譯成 CSS；執行時的主題值使用 CSS 變數。Vite 支援 SCSS，安裝對應編譯器即可。[Vite CSS 預處理器](https://vite.dev/guide/features.html#css-pre-processors)、[Sass @use](https://sass-lang.com/documentation/at-rules/use/)
 
@@ -107,9 +107,9 @@ flowchart TD
 
 ## 6 Google 授權與 Drive 存取
 
-採 Google Identity Services 瀏覽器 token 模式，再由原生 fetch 呼叫 Drive API v3。短期 token 在記憶體使用並暫存 sessionStorage，原期限不可延長；同分頁重整先以 Drive `about.user` 核對 ownerId，再載入快取與同步。過期／失效清除授權、保留草稿及待確認提交並提示重新連接。登出與切帳號在新授權前清除舊分頁憑證；epoch 阻擋遲到回應重新保存 token。詳見 [分頁授權恢復](../development/google-session.md)。[Google token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
+採 Google Identity Services 瀏覽器 token 模式，再由原生 fetch 呼叫 Drive API v3。短期 token 在記憶體使用並暫存 sessionStorage，原期限不可延長；同分頁重整先以 Drive `about.user` 核對 ownerId，再載入快取與同步。過期／失效清除授權、保留草稿及待確認提交並提示重新連接。登出與切帳號在新授權前清除舊分頁憑證；epoch 阻擋遲到回應重新保存 token。同帳號續接由明確點擊觸發，使用 prompt 空字串及已驗證 email 作 login_hint；驗證 ownerId 後替換既有 DriveClient 授權，保留 LedgerSession 與編輯器。設定頁另有切換帳號入口；未到期舊 token 不因續接取消而丟棄。詳見 [分頁授權恢復](../development/google-session.md)。[Google token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
 
-權限採 `drive.file`，操作應用建立或經使用者明確授權的檔案。資料位於本人 My Drive 根目錄專用資料夾，沿用 v0.5 的資料角色、所有者核對與隔離規則。[Google Drive 權限範圍](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
+權限採 `drive.file`，操作應用建立或經使用者明確授權的檔案。資料位於本人 My Drive 根目錄專用資料夾，沿用 v0.6 的資料角色、所有者核對與隔離規則。[Google Drive 權限範圍](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 
 開始開發前建立 Google Cloud 專案、啟用 Drive API、設定 OAuth 同意畫面與允許的網站來源，分開測試及正式設定。client ID 是前端設定；client secret 與 refresh token 不放前端。切換帳號時停止前一帳號工作，以連線識別阻擋遲到回應。
 

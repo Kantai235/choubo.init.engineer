@@ -56,10 +56,17 @@ export class DriveError extends Error {
 
 export class DriveClient {
   constructor(
-    private readonly token: string,
-    private readonly expiresAt: number,
+    private token: string,
+    private expiresAt: number,
     readonly signal: AbortSignal,
   ) {}
+  // Caller must verify the new token's owner before replacing an active grant.
+  replaceAuthorization(token: string, expiresAt: number) {
+    if (!token || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())
+      throw new DriveError('Google 授權已到期，請重新連接', 401)
+    this.token = token
+    this.expiresAt = expiresAt
+  }
   async request(path: string, init: RequestInit = {}, upload = false): Promise<unknown> {
     if (Date.now() >= this.expiresAt) throw new DriveError('Google 授權已到期，請重新連接', 401)
     const url = upload ? `https://www.googleapis.com/upload/drive/v3${path}` : `${ROOT_URL}${path}`

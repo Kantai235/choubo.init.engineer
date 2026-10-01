@@ -7,6 +7,7 @@ import AppIcon from './components/AppIcon.vue'
 import AccountEditor from './components/AccountEditor.vue'
 import TransactionEditor from './components/TransactionEditor.vue'
 import ConnectionGate from './components/ConnectionGate.vue'
+import AuthorizationNotice from './components/AuthorizationNotice.vue'
 import { preloadGoogle } from './infrastructure/auth'
 import { categoryLabel, currency } from './domain/seeds'
 import { formatMoney, sum, money } from './domain/money'
@@ -136,6 +137,7 @@ async function reverse() {
         </div>
       </header>
       <main id="main-content">
+        <AuthorizationNotice v-if="!editingAccount && !editingTransaction" />
         <div v-if="store.error" role="alert" class="banner error-banner">
           <span>{{ store.error }}</span
           ><button class="icon-button" aria-label="關閉錯誤提示" @click="store.error = ''">

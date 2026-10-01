@@ -92,3 +92,37 @@ describe('tab authorization storage', () => {
     expect(values.has(AUTH_SESSION_KEY)).toBe(false)
   })
 })
+
+const hint = { version: 1 as const, clientId, ownerId: 'alice', email: 'alice@example.test' }
+describe('same-account reconnection hints', () => {
+  it('retains only non-credential account data after token expiry and clears it on logout', () => {
+    const { storage } = fixture()
+    const auth = valid()
+    expect(storage.save(auth)).toBe(true)
+    expect(storage.saveAccount(hint)).toBe(true)
+    expect(storage.read(clientId, auth.expiresAt)).toEqual({ state: 'expired' })
+    expect(storage.readAccount(clientId)).toEqual(hint)
+    storage.clearAccount()
+    expect(storage.readAccount(clientId)).toBeUndefined()
+  })
+  it('does not accept a token hidden in the hint or a hint from another OAuth client', () => {
+    const { storage } = fixture()
+    expect(storage.saveAccount({ ...hint, token: 'unit-test-credential' } as typeof hint)).toBe(
+      false,
+    )
+    expect(storage.readAccount(clientId)).toBeUndefined()
+    storage.saveAccount(hint)
+    expect(storage.readAccount('different.apps.googleusercontent.com')).toBeUndefined()
+    expect(storage.readAccount(clientId)).toBeUndefined()
+  })
+  it('allows old grants without hints and handles blocked hint storage without leaking errors', () => {
+    const { storage } = fixture()
+    expect(storage.save(valid())).toBe(true)
+    expect(storage.readAccount(clientId)).toBeUndefined()
+    const blocked = new AuthSessionStorage(() => {
+      throw new Error('blocked')
+    })
+    expect(blocked.saveAccount(hint)).toBe(false)
+    expect(blocked.readAccount(clientId)).toBeUndefined()
+  })
+})

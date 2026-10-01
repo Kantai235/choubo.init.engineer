@@ -56,23 +56,34 @@ function exportBook() {
           }}
         </p>
         <p class="muted">
-          同一分頁重整可自動恢復有效的授權；到期、失效或關閉分頁後可能需要重新連接。登出會清除此分頁的授權暫存。
+          同一分頁重整會恢復有效授權。到期前可續接目前帳號，保留正在編輯的內容；Google
+          可能要求登入或確認。登出會清除此分頁的授權與帳號提示。
         </p>
         <div class="settings-actions">
           <button
             class="button primary"
-            :disabled="!store.clientId || store.connecting"
+            :disabled="!store.clientId || store.connecting || store.working || !store.online"
             @click="store.connect"
           >
             {{
-              store.restoring
-                ? '正在恢復連線…'
-                : store.connecting
-                  ? '正在連接…'
-                  : store.identity
-                    ? '重新連接／切換帳號'
-                    : '連接 Google Drive'
-            }}</button
+              store.renewing
+                ? '正在續接…'
+                : store.restoring
+                  ? '正在恢復連線…'
+                  : store.connecting
+                    ? '正在連接…'
+                    : store.identity
+                      ? '續接目前帳號'
+                      : '連接 Google Drive'
+            }}
+          </button>
+          <button
+            v-if="store.identity || store.hasAccountHint"
+            class="button secondary"
+            :disabled="store.connecting || store.working || !store.online"
+            @click="store.switchAccount"
+          >
+            切換帳號</button
           ><a
             v-if="store.folderUrl"
             class="button secondary"
@@ -81,13 +92,18 @@ function exportBook() {
             rel="noopener noreferrer"
             >查看 Drive 資料夾</a
           ><button
-            v-if="store.identity || store.connecting"
+            v-if="store.identity || store.connecting || store.hasAccountHint"
             class="text-button danger"
             @click="store.disconnect"
           >
             登出
           </button>
         </div>
+        <p v-if="store.authorizationExpiresAt" class="muted authorization-expiry">
+          目前授權有效至：{{
+            new Date(store.authorizationExpiresAt).toLocaleString('zh-TW')
+          }}。實際期限由 Google 核發，續接成功才會更新。
+        </p>
         <p v-if="store.lastSyncedAt" class="muted">
           最後核對：{{ new Date(store.lastSyncedAt).toLocaleString('zh-TW') }}
         </p>

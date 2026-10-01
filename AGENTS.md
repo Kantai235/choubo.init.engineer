@@ -21,7 +21,7 @@
 - `src/domain/`：schema、金額、種子資料、帳務規則；`src/application/`：提交與草稿生命週期，不依賴 Vue。
 - `src/infrastructure/`：GIS、Drive、localStorage；`src/stores/`：Pinia；`src/features/` 與 `src/components/`：畫面與元件。
 - 金額使用十進位字串與 Decimal.js。Drive 確認保存及一致性驗證後才顯示正式入帳成功。
-- 依 2026-10-02 使用者確認，短期 access token 僅存記憶體與 sessionStorage；恢復先向 Google 驗證相同帳號，保留原到期時間，登出／切帳號／到期／401 清除。禁止寫入 localStorage、Drive、匯出、日誌或 Git。localStorage 用於快取、偏好、草稿與待確認提交。不得將草稿或 pending 當作可重建快取刪除。
+- 依 2026-10-02 使用者確認，短期 access token 僅存記憶體與 sessionStorage；恢復先向 Google 驗證相同帳號，保留原到期時間，登出／切帳號／到期／401 清除。續接只能由明確點擊觸發；沿用已驗證帳號 email 作 login_hint，取得新 token 後核對 ownerId 才更新。保留編輯器及草稿；切換帳號另開明確入口。sessionStorage 可保留不含憑證的帳號提示，登出／切帳號一併清除。禁止寫入 localStorage、Drive、匯出、日誌或 Git。localStorage 用於快取、偏好、草稿與待確認提交。不得將草稿或 pending 當作可重建快取刪除。
 - 保留操作識別、帳號隔離與衝突檢查。模擬 API 測試通過不等於真實 OAuth／Drive 或跨裝置驗收通過。
 
 ## 驗證與交付

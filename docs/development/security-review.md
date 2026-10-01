@@ -55,3 +55,11 @@
 58 項單元／契約、27 項隔離 Chrome 模擬流程通過；含實際下載 JSON、localStorage 與模擬 Drive 檔案檢查不含測試 token，並覆蓋有效重整、原期限、到期、恢復及使用中 401、錯帳號、取消切換、延遲登出和草稿／pending 保護。lint、型別與 build 通過，pnpm audit 無已知漏洞。歷史 9 個提交與本次 production dist 經 Gitleaks 掃描無發現；提交前亦檢查本次 staged diff 與禁止敏感檔案。掃描不保證未知漏洞不存在。
 
 測試使用假憑證；沒有收集或記錄使用者實際 token。此結果不等同真實 Google 到期續接、所有瀏覽器分頁還原或跨裝置驗收。
+
+## 2026-10-02：同帳號續接與帳號提示
+
+新增續接以明確使用者點擊觸發，使用空 prompt 與 Google 已驗證 email 作 login_hint；Drive permissionId 不當成 Google ID token 的 sub。任何新 token 必須先呼叫 about.user 並核對原 ownerId，才能替換原連線與暫存；不同帳號拒絕採用，保留原編輯內容。切換入口另行清除、選帳號；取消續接不提前清除未到期原授權；實際 API 401 與原期限仍有效。
+
+新增 sessionStorage 的 `choubo:auth-account:v1` 僅含 Client ID、ownerId、email 及格式版本，不含憑證，採嚴格 schema，不能用來證明已授權，不進 localStorage、Drive 偏好或匯出。此提示可跨 token 到期保留，登出／切帳號／Client ID 變更則清除；遲到回應不能重新保存。token 仍不進可序列化 Pinia 狀態。
+
+72 項單元／契約及 33 項隔離瀏覽器測試通過，包含續接 prompt／hint、所有者核對、取消／候選 401、原期限保留、兩種編輯器、pending 保護及登出競態。檢查本輪 staged diff、production dist 與所有提交的憑證掃描，並維持 pnpm audit 無已知漏洞；詳細掃描輸出留在忽略的 work/security。本輪沒有取得或記錄真實使用者 token，也不將模擬驗證當成真實 Google 全面驗收。

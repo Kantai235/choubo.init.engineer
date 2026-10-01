@@ -13,7 +13,7 @@ const isDevelopment = import.meta.env.DEV
       <button
         v-if="book.clientId"
         class="button primary large"
-        :disabled="book.connecting"
+        :disabled="book.connecting || book.working || !book.online"
         @click="book.connect"
       >
         <AppIcon name="cloud" />{{
@@ -26,6 +26,15 @@ const isDevelopment = import.meta.env.DEV
       <p v-if="!book.clientId && !isDevelopment" role="status">
         網站的 Google 連線設定尚未完成，請稍後再試。
       </p>
+      <button
+        v-if="book.hasAccountHint && book.clientId"
+        type="button"
+        class="text-button"
+        :disabled="book.connecting || book.working || !book.online"
+        @click="book.switchAccount"
+      >
+        切換帳號
+      </button>
       <span class="gate-note"><AppIcon name="lock" :size="15" />帳務只保存在你的雲端硬碟</span>
     </div>
     <div class="book-illustration" aria-hidden="true">

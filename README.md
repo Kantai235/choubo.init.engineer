@@ -1,6 +1,6 @@
 # Choubo 個人帳簿
 
-純前端網頁記帳程式，以使用者自己的 Google Drive 保存正式資料，localStorage 用於快取、草稿與待確認提交；短期 access token 僅存記憶體與 sessionStorage，同分頁重整後先驗證身分再恢復連線。
+純前端網頁記帳程式，以使用者自己的 Google Drive 保存正式資料，localStorage 用於快取、草稿與待確認提交；短期 access token 僅存記憶體與 sessionStorage，同分頁重整後先驗證身分再恢復連線；到期前可一鍵續接同一帳號並保留編輯內容。
 
 已建立 **0.1.0 基礎記帳開發版**：帳戶管理、多明細收入／支出／轉帳、草稿自動保存、Drive 確認後入帳、失敗重試、查詢及撤銷。這是 M0／M1 的部分實作；信用帳單、回饋、分期、自動儲值、應收應付及完整備份仍依需求文件後續開發。
 
@@ -23,7 +23,7 @@ pnpm dev
 - [GitHub Pages、Cloudflare 與部署驗證](docs/development/deployment.md)
 - [提交前資安檢查](docs/development/security-review.md)
 - [文件索引](docs/README.md)
-- [系統分析與需求報告 v0.5](docs/requirements/system-analysis-and-requirements.md)
+- [系統分析與需求報告 v0.6](docs/requirements/system-analysis-and-requirements.md)
 - [技術選型與實作架構](docs/architecture/technical-stack.md)
 - [首版介面方向](docs/architecture/interface-direction.md)
 
