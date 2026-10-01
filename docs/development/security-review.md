@@ -17,6 +17,8 @@
 | production | CSP 限制 script／連線／frame，禁止 object／base；停用 source maps；開發用 Client ID 編輯與覆寫僅 DEV |
 | GitHub Actions | 固定 actions SHA、最小權限、PR 不部署、只上傳 dist、checkout 不保留 Git 憑證 |
 | 遠端持續檢查 | 已啟用 GitHub Secret scanning、Push protection、Dependabot alerts；啟用後查詢秘密與依賴漏洞警示均為 0 |
+| TLS | GitHub Pages 憑證已核發，Enforce HTTPS 已開啟，HTTP 301 轉 HTTPS；首頁與隱私頁均回應 200 |
+| OAuth 部署 | 僅公开 Client ID 存在 Actions variable／前端 bundle；`.env.local` 已忽略，未下載或保存 client secret |
 | 網域所有權 | 透過 Cloudflare TXT 完成 GitHub `choubo.init.engineer` Verified domain；限制其他帳號使用此子網域發布 Pages |
 
 `scripts/check-sensitive-files.mjs` 在提交檔案／CI 檢查禁止檔名及常見 token／私鑰格式。執行 `node scripts/check-sensitive-files.mjs --staged` 可檢查即將提交的實際內容。掃描原始報告與備份只存放於已忽略的 `work/security/`。
@@ -34,6 +36,6 @@
 
 - localStorage 及 Drive JSON 未做端對端加密；共享電腦需保護作業系統／瀏覽器登入。帳號隔離不是防止本機管理員讀取的加密機制。
 - 記憶體 token 仍可能受同來源 XSS／惡意擴充功能影響；CSP 是額外防護，不能代替輸入與供應鏈控制。
-- GitHub Pages 不提供專案自訂 HTTP 標頭；meta CSP 不能套用 `frame-ancestors`、HSTS 或 COOP。真實 GIS popup 尚需實測。
+- GitHub Pages 不提供專案自訂 HTTP 標頭；meta CSP 不能套用 `frame-ancestors`、HSTS 或 COOP。正式 origin 的真實 GIS popup 已抵達 Google 授權確認頁；實際取得 token 與 Drive 寫入另列於進度文件。
 - Drive 沒有本應用所需的跨檔案交易鎖；未完成共同額度上限、進階衝突解決、還原與遷移。不得宣稱金融系統等級一致性或完整 90 項驗收通過。
 - 公開 OAuth Client ID、網站網域與 Google Cloud 專案 ID 是公開識別資訊；Client Secret、access／refresh token、Service Account key 不可提交或放入 Vite 環境變數。

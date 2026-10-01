@@ -12,7 +12,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-開啟 <http://127.0.0.1:5173/>。在 `.env.local` 設定公開 `VITE_GOOGLE_CLIENT_ID`，或從網站設定頁配置開發用 Client ID。未設定時可查看連線引導。真實 Google 授權尚待網站 Client ID 驗證；一般使用者不必自己建立 Google Cloud 專案。
+開啟 <http://127.0.0.1:5173/>。在 `.env.local` 設定公開 `VITE_GOOGLE_CLIENT_ID`，或從網站設定頁配置開發用 Client ID。未設定時可查看連線引導。正式站已配置網站 Client ID；Google 應用目前為 Testing，只有列入的測試帳號可授權。一般使用者不必自己建立 Google Cloud 專案。
 
 技術：Vue 3、TypeScript、Vite、Pinia、Vue Router、SCSS、PrimeVue 4、Zod、Decimal.js、Luxon。測試：Vitest、Playwright。
 

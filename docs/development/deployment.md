@@ -17,9 +17,12 @@
 - 調整 CI 後的提交 `486a98a` 也已[完整驗證及部署成功](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36915605615)，runner Chrome 154.0.8037.57 執行 7 項瀏覽器測試通過，測試耗時 23.4 秒。
 - Pages 已綁定 `choubo.init.engineer`。Cloudflare 已新增 CNAME、DNS only、TTL 自動；Cloudflare 權威 DNS、1.1.1.1 與 8.8.8.8 均解析至 `kantai235.github.io`。
 - 已新增 `_github-pages-challenge-Kantai235.choubo` TXT，並在 GitHub 個人 Pages 設定完成 `choubo.init.engineer` 所有權驗證，畫面顯示 Verified。需保留驗證紀錄，才能持續保護此網域。
-- HTTP 首頁回傳 200，含正確 Choubo HTML、production CSP 與編譯 assets。
-- 截至 2026-10-02 03:40（Asia/Taipei），GitHub 已受理 TLS 憑證申請，狀態為 new；HTTPS 憑證核發與 Enforce HTTPS 尚待確認。未通過 TLS 驗證前不進行 Google 授權或帳務操作。
-- Google Cloud `choubo` 專案已建立，Google Drive API 已啟用；Google Auth 的名稱、支援信箱、External 測試對象與聯絡資訊已填妥，停在使用者資料政策同意步驟。OAuth Web client、測試帳號與 Actions Client ID 變數尚待完成，網站目前顯示連線設定未完成。
+- 初次 HTTP 首頁回傳 200，含正確 Choubo HTML、production CSP 與編譯 assets；憑證生效後改為強制 HTTPS。
+- 2026-10-02 03:42（Asia/Taipei）HTTPS 憑證已核發，Enforce HTTPS 已開啟，HTTP 301 轉向 HTTPS。首頁與 `/privacy.html` HTTPS 回傳 200；Chrome 已檢查正式站與 `/#/settings` 直接載入。網域所有權狀態為 verified。
+- Google Cloud `choubo` 專案、Google Drive API、Google Auth 品牌／同意畫面、`drive.file` 範圍與 1 位測試使用者已設定。Web client 名稱為 `Choubo Web`；公開 Client ID 已設至 Actions repository variable 與忽略追蹤的 `.env.local`。未下載或保存 client secret。
+- OAuth 目前為 External／Testing，僅測試使用者可授權。正式公開給一般使用者前，需另完成 Google 應用發布設定；公開 GitHub repository 不代表 Google OAuth 已對所有人開放。
+
+- 注入 Client ID 後的 [Actions 部署](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36917433341) 驗證與部署均成功。正式站已出現可用的 Google Drive 按鈕；真實 Google popup 接受來源、測試帳號與 `drive.file`，進入授權確認頁，尚待使用者同意後驗證 Drive 寫入。
 
 ## 自動部署
 
@@ -36,7 +39,7 @@ GitHub Actions repository variable `VITE_GOOGLE_CLIENT_ID` 保存公開網頁 Cl
 1. GitHub 啟用 Actions Pages 並綁定 custom domain。
 2. 在 Cloudflare 新增僅屬於 `choubo` 的 CNAME，不覆蓋 apex 或其他網站紀錄。
 3. DNS 驗證成功後等待 GitHub TLS 憑證，啟用 Enforce HTTPS。
-4. Google OAuth 網頁來源加入 `https://choubo.init.engineer`；開發來源另外列出 `http://127.0.0.1:5173`、`http://localhost:5173`。
+4. Google OAuth 網頁來源加入 `https://choubo.init.engineer`；開發來源另外列出 `http://127.0.0.1:5173`、`http://localhost:5173`、`http://localhost`。本版使用 popup token model，未設定 redirect URI。
 5. 在 Google 設定 `drive.file` scope 與測試使用者，建立 Web client，將公開 ID 配置至 Actions variable。
 6. 驗證部署成功、TLS、首頁／hash 路由／privacy，最後實測 OAuth。Google Testing 階段只有已列入的測試帳號能使用。
 
