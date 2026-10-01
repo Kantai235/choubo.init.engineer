@@ -23,6 +23,8 @@
 
 每次 push 至 `main` 觸發 `.github/workflows/deploy-pages.yml`，依序檢查敏感檔案、套件漏洞、lint、單元測試、瀏覽器測試、型別與 production build。只有成功後才部署；PR 只驗證。手動重跑可用 workflow_dispatch。
 
+CI 固定 `ubuntu-24.04`／Node 24，使用 GitHub runner 預裝 Google Chrome 跑同一套 Playwright 測試，並印出瀏覽器版本；不額外執行 apt 升級。這避免第一次上線時觀察到的 Ubuntu 套件鏡像下載停滯。驗證工作上限 15 分鐘，部署上限 10 分鐘。Chrome 版本隨 GitHub runner image 更新，來源為 [官方 runner 軟體清單](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)。
+
 GitHub Actions repository variable `VITE_GOOGLE_CLIENT_ID` 保存公開網頁 Client ID。改變變數後需重新跑部署，Vite 不會在執行時读取 GitHub 變數。不設定任何 OAuth client secret；GitHub 的 OIDC／Pages token 由平台提供。
 
 `public/CNAME` 與 `public/.nojekyll` 隨 build 複製。Vue 使用 hash 路由，因此 Pages 不需 404 rewrite。隱私權說明固定 `/privacy.html`。

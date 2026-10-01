@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   verify-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,7 +35,9 @@ jobs:
       - run: pnpm test
       - name: Browser regression tests
         run: |
-          pnpm exec playwright install --with-deps chromium
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$(command -v google-chrome)"
+          test -n "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"
+          "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
           pnpm test:e2e
       - name: Build static site
         run: pnpm build
@@ -52,7 +55,8 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: verify-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
