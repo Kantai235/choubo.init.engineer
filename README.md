@@ -20,6 +20,8 @@ pnpm dev
 
 - [啟動、OAuth 設定及測試命令](docs/development/setup.md)
 - [實作進度、驗證與限制](docs/development/progress.md)
+- [GitHub Pages、Cloudflare 與部署驗證](docs/development/deployment.md)
+- [提交前資安檢查](docs/development/security-review.md)
 - [文件索引](docs/README.md)
 - [系統分析與需求報告 v0.4](docs/requirements/system-analysis-and-requirements.md)
 - [技術選型與實作架構](docs/architecture/technical-stack.md)

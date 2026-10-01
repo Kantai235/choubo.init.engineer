@@ -10,7 +10,14 @@
 - DNS：Cloudflare 的 `init.engineer` zone；`choubo` CNAME 指向 `kantai235.github.io`，初始採 DNS only。
 - Google Cloud：獨立 `Choubo` 專案，ID `choubo`；Drive API 與瀏覽器 OAuth。
 
-初次部署仍在進行，網域解析、TLS、Google Client ID 與遠端 workflow 的實際完成狀態以本文後續驗證紀錄為準。
+## 初次部署驗證紀錄
+
+- 初次程式提交 `2b2b07a` 已推送至 `main`。
+- [首次 Actions 執行](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36914090148) 的 verify-build 與 deploy 均成功；GitHub Ubuntu／Node 24 環境也通過單元、瀏覽器與建置驗證。
+- Pages 已綁定 `choubo.init.engineer`。Cloudflare 已新增 CNAME、DNS only、TTL 自動；Cloudflare 權威 DNS、1.1.1.1 與 8.8.8.8 均解析至 `kantai235.github.io`。
+- HTTP 首頁回傳 200，含正確 Choubo HTML、production CSP 與編譯 assets。
+- GitHub 已受理 TLS 憑證申請；HTTPS 憑證核發與 Enforce HTTPS 尚待確認。未通過 TLS 驗證前不進行 Google 授權或帳務操作。
+- Google Cloud `choubo` 專案已建立，Google Drive API 已啟用；Google Auth 的名稱、支援信箱、External 測試對象與聯絡資訊已填妥，停在使用者資料政策同意步驟。OAuth Web client、測試帳號與 Actions Client ID 變數尚待完成，網站目前顯示連線設定未完成。
 
 ## 自動部署
 

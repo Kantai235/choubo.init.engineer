@@ -16,6 +16,7 @@
 | HTML 注入 | Vue 純文字插值；惡意 HTML 瀏覽器案例通過；無 `v-html` 或 eval |
 | production | CSP 限制 script／連線／frame，禁止 object／base；停用 source maps；開發用 Client ID 編輯與覆寫僅 DEV |
 | GitHub Actions | 固定 actions SHA、最小權限、PR 不部署、只上傳 dist、checkout 不保留 Git 憑證 |
+| 遠端持續檢查 | 已啟用 GitHub Secret scanning、Push protection、Dependabot alerts；啟用後查詢秘密與依賴漏洞警示均為 0 |
 
 `scripts/check-sensitive-files.mjs` 在提交檔案／CI 檢查禁止檔名及常見 token／私鑰格式。執行 `node scripts/check-sensitive-files.mjs --staged` 可檢查即將提交的實際內容。掃描原始報告與備份只存放於已忽略的 `work/security/`。
 
@@ -25,6 +26,7 @@
 - 37 項單元／應用／Drive 契約測試通過。
 - 7 項 Playwright 流程通過，包括 XSS 文字顯示、切換帳號、離線草稿、失敗重試與撤銷。
 - production preview：hash 路由重新整理、隱藏開發設定、隱私頁、inline script 遭 CSP 阻擋，未見 page error。
+- 初次 `main` 推送後，GitHub Ubuntu／Node 24 的完整 workflow 驗證與 Pages 部署通過。
 - 上述自動測試使用隔離的模擬 GIS／Drive，不等於真實 Google 帳號、撤銷權限或跨裝置完整驗收。
 
 ## 已知安全邊界
