@@ -117,10 +117,18 @@ async function connect(page: Page) {
 async function createAccount(page: Page, name = '日常現金', balance = '1000') {
   await page.getByRole('link', { name: '我的帳戶', exact: true }).click()
   await page.getByRole('button', { name: '新增帳戶', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  // PrimeVue focuses the first input after its enter transition. Filling a
+  // second field before that callback can send text to the first field in CI.
+  await expect(dialog).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
   await page.getByLabel('帳戶名稱', { exact: true }).fill(name)
   await page.getByLabel('期初餘額', { exact: false }).fill(balance)
+  await expect(page.getByLabel('帳戶名稱', { exact: true })).toHaveValue(name)
+  await expect(page.getByLabel('期初餘額', { exact: false })).toHaveValue(balance)
   await page.getByRole('button', { name: '保存帳戶', exact: true }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 async function openExpense(page: Page) {
   await page.getByRole('link', { name: '收支紀錄', exact: true }).click()

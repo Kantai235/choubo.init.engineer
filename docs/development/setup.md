@@ -63,6 +63,7 @@ pnpm preview
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' pnpm test:e2e
 ```
 
+- 帳戶表單測試在 PrimeVue 開啟動畫完成後才填值，並在提交前確認名稱／金額、保存後確認帳戶出現；避免 `onAfterEnter` 的自動聚焦與快速填表競爭。測試不使用自動重試掩蓋錯誤。
 - 螢幕截圖及失敗 trace 位於 `test-results/`，已排除版本控制；不把測試中的範例金額當成真實帳務。
 - 首次安裝、CI 使用 lockfile。`@parcel/watcher` 的非必要安裝腳本停用；SCSS 由 `sass-embedded` 處理。
 - PrimeVue 固定在 MIT 授權的 4.5.5，主題固定 2.0.3。更新重大版本前檢查授權及整合，不能直接改成 latest。
