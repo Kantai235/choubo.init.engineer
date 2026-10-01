@@ -6,6 +6,8 @@
 
 - [開發與 Google Drive 設定](development/setup.md)：啟動、公開 Client ID、測試與靜態部署。
 - [實作進度與驗證紀錄](development/progress.md)：0.1.0 範圍、FR 對應、已知限制及後續項目。
+- [功能與 UI 核對報告](development/requirements-ui-audit.md)：逐模組與欄位對照、設計差異、現有功能修正及暗色模式。
+- [AT01～AT90 驗收矩陣](development/acceptance-matrix.csv)：每項原始情境、預期、現況與證據限制。
 - [首版介面方向](architecture/interface-direction.md)：視覺與操作設計。
 - [Codex 插件與工作流程配置](development/codex-plugins.md)：插件選型、已完成設定、來源限制及連線狀態。
 
@@ -42,7 +44,7 @@
 
 ## 來源與維護
 
-本次將既有完整報告保存到專案，技術文件依 2026 年 10 月 2 日的技術選型討論整理。現行需求報告內容與原 v0.4 Markdown 一致。
+本次將既有完整報告保存到專案，技術文件依 2026 年 10 月 2 日的技術選型討論整理。帳務規格維持原 v0.4；另依使用者本輪要求補充第 19 章系統亮／暗外觀規則。
 
 | 原始 Page | 專案文件 |
 | --- | --- |

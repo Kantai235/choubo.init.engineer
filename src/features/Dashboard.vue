@@ -4,8 +4,8 @@ import { DateTime } from 'luxon'
 import AppIcon from '../components/AppIcon.vue'
 import TransactionList from '../components/TransactionList.vue'
 import { useBookStore } from '../stores/book'
-import { Money, formatMoney } from '../domain/money'
-import { total, netFee } from '../domain/ledger'
+import { formatMoney } from '../domain/money'
+import { cashFlowSummary } from '../domain/report'
 import { currency } from '../domain/seeds'
 import type { Transaction } from '../domain/model'
 const store = useBookStore()
@@ -13,6 +13,7 @@ const openAccount = inject<() => void>('openAccount')!
 const openTransaction = inject<() => void>('openTransaction')!
 const showTransaction = inject<(t: Transaction) => void>('showTransaction')!
 const selectedCurrency = ref('TWD')
+const includeAdjustments = ref(false)
 const month = DateTime.now().setZone('Asia/Taipei').toFormat('yyyy-MM')
 const accounts = computed(() => store.ledger.accounts.filter((a) => !a.archived))
 const currencyOptions = computed(() => [
@@ -26,26 +27,9 @@ const recent = computed(() =>
     .sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`))
     .slice(0, 6),
 )
-const summary = computed(() => {
-  let balance = new Money(0),
-    income = new Money(0),
-    expense = new Money(0)
-  for (const a of store.ledger.accounts)
-    if (a.currencyId === selectedCurrency.value && a.includeInTotal)
-      balance = balance.plus(store.accountBalances[a.id] || '0')
-  for (const tx of current.value) {
-    if (
-      !tx.date.startsWith(month) ||
-      store.ledger.accounts.find((a) => a.id === tx.accountId)?.currencyId !==
-        selectedCurrency.value
-    )
-      continue
-    if (tx.kind === 'income') income = income.plus(total(tx))
-    if (tx.kind === 'expense') expense = expense.plus(total(tx))
-    if (tx.kind === 'transfer') expense = expense.plus(netFee(tx))
-  }
-  return { balance: balance.toFixed(), income: income.toFixed(), expense: expense.toFixed() }
-})
+const summary = computed(() =>
+  cashFlowSummary(store.ledger, selectedCurrency.value, month, includeAdjustments.value),
+)
 const formatted = (amount: string) =>
   formatMoney(amount, currency(selectedCurrency.value).precision)
 </script>
@@ -66,6 +50,12 @@ const formatted = (amount: string) =>
       <AppIcon name="plus" />{{ accounts.length ? '記一筆' : '建立第一個帳戶' }}
     </button>
   </section>
+  <div class="page-toolbar">
+    <span class="muted">資金收支 · 依交易日 · {{ month }}</span>
+    <label class="checkbox"
+      ><input v-model="includeAdjustments" type="checkbox" />包含對帳差額</label
+    >
+  </div>
   <section class="balance-overview" aria-label="帳務摘要">
     <div class="balance-main">
       <div class="balance-caption">

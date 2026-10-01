@@ -35,6 +35,16 @@ function exportBook() {
   </section>
   <div class="settings-stack">
     <section class="surface settings-section">
+      <div class="settings-icon"><AppIcon name="settings" :size="25" /></div>
+      <div class="settings-body">
+        <h2>顯示外觀</h2>
+        <p>
+          跟隨系統設定，目前為<span class="theme-light-label">亮色</span
+          ><span class="theme-dark-label">暗色</span>模式。變更裝置的外觀設定後，網站會即時更新。
+        </p>
+      </div>
+    </section>
+    <section class="surface settings-section">
       <div class="settings-icon"><AppIcon name="cloud" :size="25" /></div>
       <div class="settings-body">
         <h2>Google Drive 連線</h2>

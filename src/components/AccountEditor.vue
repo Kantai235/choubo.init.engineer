@@ -86,7 +86,9 @@ async function save() {
           inputmode="decimal"
           :disabled="!!props.account"
           required
-        /><small>不列入收入；信用欠款請輸入負數。</small></label
+        /><small
+          >不列入收入。若需記錄既有欠款，可輸入負數；目前尚未提供信用額度與帳單功能。</small
+        ></label
       >
       <label
         >備註<textarea

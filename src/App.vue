@@ -9,8 +9,8 @@ import TransactionEditor from './components/TransactionEditor.vue'
 import ConnectionGate from './components/ConnectionGate.vue'
 import { preloadGoogle } from './infrastructure/auth'
 import { categoryLabel, currency } from './domain/seeds'
-import { formatMoney } from './domain/money'
-import { total } from './domain/ledger'
+import { formatMoney, sum, money } from './domain/money'
+import { total, netFee } from './domain/ledger'
 import { kindNames, type AccountView, type Transaction } from './domain/model'
 const store = useBookStore()
 const route = useRoute()
@@ -23,6 +23,9 @@ const reversal = ref(false)
 const reason = ref('')
 const currentAccount = computed(() =>
   store.ledger.accounts.find((a) => a.id === selected.value?.accountId),
+)
+const targetAccount = computed(() =>
+  store.ledger.accounts.find((a) => a.id === selected.value?.targetAccountId),
 )
 const navigation = [
   { path: '/', label: '總覽', icon: 'home' },
@@ -145,7 +148,9 @@ async function reverse() {
           </button>
         </div>
         <div v-if="store.cached" class="banner">
-          顯示上次確認的快取資料，尚待與 Google Drive 核對。
+          顯示上次確認的快取資料（{{
+            new Date(store.lastSyncedAt).toLocaleString('zh-TW')
+          }}），尚待與 Google Drive 核對。
         </div>
         <RouterLink
           v-if="store.ledger.conflicts.length && route.path !== '/drafts'"
@@ -202,6 +207,10 @@ async function reverse() {
           >
           <h2>{{ selected.title || selected.merchant || selected.lines[0]?.name }}</h2>
           <p>{{ selected.date }} {{ selected.time }} · {{ currentAccount?.name }}</p>
+          <p v-if="selected.merchant">商家／對象：{{ selected.merchant }}</p>
+          <p v-if="selected.kind === 'transfer'">
+            轉入帳戶：{{ targetAccount?.name }} · {{ targetAccount?.currencyId }}
+          </p>
           <div v-for="line in selected.lines" :key="line.id" class="record-line">
             <span
               ><strong>{{ line.name }}</strong
@@ -223,7 +232,21 @@ async function reverse() {
             >
           </div>
           <p v-if="selected.kind === 'transfer'">
-            手續費 {{ selected.fee }}，手續費折扣 {{ selected.feeDiscount }}
+            轉入合計 {{ targetAccount?.currencyId }}
+            {{
+              formatMoney(
+                sum(selected.lines.map((line) => line.destinationAmount)),
+                currency(targetAccount?.currencyId || 'TWD').precision,
+              )
+            }}<br />
+            手續費 {{ selected.fee }}，手續費折扣 {{ selected.feeDiscount }}<br />
+            來源實扣 {{ currentAccount?.currencyId }}
+            {{
+              formatMoney(
+                money(total(selected)).plus(netFee(selected)).toFixed(),
+                currency(currentAccount?.currencyId || 'TWD').precision,
+              )
+            }}
           </p>
           <p v-if="selected.invoiceNumber">
             發票 {{ selected.invoiceNumber }} · {{ selected.randomCode }}

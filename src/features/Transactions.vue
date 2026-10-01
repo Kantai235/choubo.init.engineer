@@ -4,6 +4,7 @@ import { useBookStore } from '../stores/book'
 import { type Transaction } from '../domain/model'
 import AppIcon from '../components/AppIcon.vue'
 import TransactionList from '../components/TransactionList.vue'
+import { categoryLabel } from '../domain/seeds'
 const store = useBookStore()
 const openTransaction = inject<() => void>('openTransaction')!
 const showTransaction = inject<(tx: Transaction) => void>('showTransaction')!
@@ -22,7 +23,7 @@ const transactions = computed(() =>
           t.targetAccountId === accountId.value) &&
         (!kind.value || t.kind === kind.value) &&
         (!month.value || t.date.startsWith(month.value)) &&
-        `${t.title} ${t.merchant} ${t.note} ${t.lines.map((l) => l.name).join(' ')}`
+        `${t.title} ${t.merchant} ${t.note} ${t.lines.map((l) => `${l.name} ${categoryLabel(l.categoryId)}`).join(' ')}`
           .toLowerCase()
           .includes(search.value.toLowerCase()),
     )
@@ -50,7 +51,7 @@ const transactions = computed(() =>
         ><AppIcon name="search" :size="18" /><input
           v-model="search"
           aria-label="搜尋紀錄"
-          placeholder="搜尋名稱、商家或備註" /></label
+          placeholder="搜尋分類、名稱、商家或備註" /></label
       ><select v-model="accountId" aria-label="篩選帳戶">
         <option value="">全部帳戶</option>
         <option v-for="a in store.ledger.accounts" :key="a.id" :value="a.id">

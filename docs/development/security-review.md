@@ -39,3 +39,9 @@
 - GitHub Pages 不提供專案自訂 HTTP 標頭；meta CSP 不能套用 `frame-ancestors`、HSTS 或 COOP。正式 origin 的真實 GIS popup 已抵達 Google 授權確認頁；實際取得 token 與 Drive 寫入另列於進度文件。
 - Drive 沒有本應用所需的跨檔案交易鎖；未完成共同額度上限、進階衝突解決、還原與遷移。不得宣稱金融系統等級一致性或完整 90 項驗收通過。
 - 公開 OAuth Client ID、網站網域與 Google Cloud 專案 ID 是公開識別資訊；Client Secret、access／refresh token、Service Account key 不可提交或放入 Vite 環境變數。
+
+## 2026-10-02：需求核對與暗色模式提交
+
+本輪變更不增加 Google scope、第三方腳本或憑證儲存；access token 仍僅記憶體。主題以 CSS 系統偏好決定，不新增 localStorage／sessionStorage key。帳務修改限於報表的對帳差額篩選及查詢／明細展示，不重寫已存在的 Drive 操作。
+
+提交前禁止路徑／憑證格式檢查通過；Gitleaks 對 staged diff 與 production `dist/` 掃描均無發現，`pnpm audit` 無已知漏洞。測試截圖只含模擬資料並保持不提交；報告不含真實 Drive ID、使用者 token 或個人電郵。本輪新增的資料讀寫模擬不等同真實跨裝置資安驗收。

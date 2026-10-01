@@ -131,7 +131,7 @@ async function createAccount(page: Page, name = '日常現金', balance = '1000'
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 async function openExpense(page: Page) {
-  await page.getByRole('link', { name: '收支紀錄', exact: true }).click()
+  await page.getByRole('link', { name: /^(收支紀錄|紀錄)$/ }).click()
   await page.getByRole('button', { name: '記一筆', exact: true }).click()
   await page.getByLabel('記帳帳戶', { exact: true }).selectOption({ label: '日常現金 · TWD' })
   await page.getByLabel('第 1 行名稱', { exact: true }).fill('早餐三明治')
@@ -348,4 +348,248 @@ test('financial text is rendered as text and never executes markup', async ({ pa
   await expect(page.locator('img[src="x"]')).toHaveCount(0)
   await page.reload()
   await expect(page.getByText(payload, { exact: true })).not.toBeVisible()
+})
+
+async function assertReadableSurface(page: Page) {
+  const dialog = page.getByRole('dialog')
+  if (await dialog.isVisible())
+    await expect(dialog).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
+  const issues = await page.evaluate(() => {
+    const rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number)
+    const luminance = (c: number[]) =>
+      c
+        .slice(0, 3)
+        .map((x) => {
+          const n = x / 255
+          return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4
+        })
+        .reduce((v, n, i) => v + n * [0.2126, 0.7152, 0.0722][i]!, 0)
+    const issues: string[] = []
+    for (const el of document.querySelectorAll<HTMLElement>(
+      'main *, .p-dialog *, .sidebar a, .mobile-nav a',
+    )) {
+      if (
+        !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) ||
+        el.closest('[aria-hidden="true"], :disabled') ||
+        ![...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim())
+      )
+        continue
+      const fg = rgb(getComputedStyle(el).color)
+      let ancestor: HTMLElement | null = el
+      let bg: number[] = []
+      while (ancestor) {
+        bg = rgb(getComputedStyle(ancestor).backgroundColor)
+        if (bg.length === 3 || bg[3] === 1) break
+        ancestor = ancestor.parentElement
+      }
+      if (!ancestor || fg.length < 3 || bg.length < 3) continue
+      const a = luminance(fg),
+        b = luminance(bg)
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      const style = getComputedStyle(el)
+      const large =
+        parseFloat(style.fontSize) >= 24 ||
+        (parseFloat(style.fontSize) >= 18.66 && Number(style.fontWeight) >= 700)
+      if (ratio < (large ? 3 : 4.5))
+        issues.push(
+          `${el.tagName}.${el.className}: ${el.textContent?.trim().slice(0, 24)} (${ratio.toFixed(2)})`,
+        )
+    }
+    return issues
+  })
+  expect(issues).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`UI audit: ${scheme} desktop and mobile surfaces, dialogs and error states`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    await page.emulateMedia({ colorScheme: scheme })
+    const mock = await installDrive(page)
+    await page.goto('/')
+    await assertReadableSurface(page)
+    await page.screenshot({ path: `test-results/audit-${scheme}-onboarding.png`, fullPage: true })
+    await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
+    await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+    await createAccount(page)
+    await openExpense(page)
+    await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+    await expect(page.getByRole('dialog')).not.toBeVisible()
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ width, height: width === 360 ? 800 : 1000 })
+      for (const [path, name] of [
+        ['/', 'dashboard'],
+        ['/accounts', 'accounts'],
+        ['/transactions', 'transactions'],
+        ['/drafts', 'drafts'],
+        ['/settings', 'settings'],
+      ]) {
+        await page.goto(`/#${path}`)
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+        await assertReadableSurface(page)
+        await page.screenshot({
+          path: `test-results/audit-${scheme}-${width}-${name}.png`,
+          fullPage: true,
+        })
+      }
+      await page.goto('/#/accounts')
+      await page.getByRole('button', { name: '編輯日常現金', exact: true }).click()
+      await expect(page.getByRole('dialog')).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
+      await assertReadableSurface(page)
+      await page.screenshot({
+        path: `test-results/audit-${scheme}-${width}-account-editor.png`,
+        fullPage: true,
+      })
+      await page.getByRole('button', { name: '取消', exact: true }).click()
+      await page.goto('/#/transactions')
+      await page
+        .getByRole('button', { name: /早餐三明治.*60/ })
+        .first()
+        .click()
+      await assertReadableSurface(page)
+      await page.screenshot({
+        path: `test-results/audit-${scheme}-${width}-record-detail.png`,
+        fullPage: true,
+      })
+      await page.keyboard.press('Escape')
+      await openExpense(page)
+      mock.failOperations = true
+      await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+      await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible()
+      await assertReadableSurface(page)
+      await page.screenshot({
+        path: `test-results/audit-${scheme}-${width}-editor-error.png`,
+        fullPage: true,
+      })
+      mock.failOperations = false
+      await page.getByRole('button', { name: '保留草稿', exact: true }).click()
+      await page.goto('/#/drafts')
+      await assertReadableSurface(page)
+      await page.screenshot({
+        path: `test-results/audit-${scheme}-${width}-pending.png`,
+        fullPage: true,
+      })
+      await page.getByRole('button', { name: '查回／重試' }).click()
+      await expect(page.getByRole('heading', { name: '等待確認的提交' })).not.toBeVisible()
+    }
+    await page.goto('/privacy.html')
+    await assertReadableSurface(page)
+    await page.screenshot({ path: `test-results/audit-${scheme}-privacy.png`, fullPage: true })
+  })
+}
+
+test('appearance follows live system changes, including an open dialog, without reconnecting', async ({
+  page,
+}) => {
+  await installDrive(page)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(27, 37, 50)')
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('第 1 行名稱', { exact: true })).toHaveValue('早餐三明治')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+})
+
+test('category search and reconciliation report controls agree with posted balance', async ({
+  page,
+}) => {
+  await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  await page.getByLabel('第 1 行分類', { exact: true }).selectOption({ label: '其他／對帳差額' })
+  await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.getByRole('textbox', { name: '搜尋紀錄' }).fill('對帳差額')
+  await expect(page.getByRole('button', { name: /早餐三明治.*60/ })).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.locator('.balance-number')).toHaveText('940')
+  const spending = page.locator('.month-stat').filter({ hasText: '本月支出' }).locator('strong')
+  await expect(spending).toHaveText('0')
+  await page.getByLabel('包含對帳差額').check()
+  await expect(spending).toHaveText('60')
+  await expect(page.locator('.balance-number')).toHaveText('940')
+})
+
+test('account default, edit, exclusion, archive and restore preserve historical transactions', async ({
+  page,
+}) => {
+  await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.getByRole('link', { name: '我的帳戶', exact: true }).click()
+  await page.getByRole('button', { name: '設為預設記帳帳戶' }).click()
+  await expect(page.getByText('預設帳戶', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '編輯日常現金' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
+  await page.getByLabel('帳戶名稱', { exact: true }).fill('生活現金')
+  await page.getByLabel('帳戶分組', { exact: true }).selectOption('儲值卡')
+  await page.getByLabel('納入總餘額', { exact: true }).uncheck()
+  await page.getByRole('button', { name: '保存帳戶' }).click()
+  await expect(dialog).not.toBeVisible()
+  await page.getByRole('link', { name: '總覽', exact: true }).click()
+  await expect(page.locator('.balance-number')).toHaveText('0')
+  await expect(
+    page.locator('.month-stat').filter({ hasText: '本月支出' }).locator('strong'),
+  ).toHaveText('60')
+  await page.getByRole('button', { name: '記一筆', exact: true }).click()
+  await expect(page.getByLabel('記帳帳戶', { exact: true }).locator('option:checked')).toHaveText(
+    '生活現金 · TWD',
+  )
+  await page.keyboard.press('Escape')
+  await page.getByRole('link', { name: '我的帳戶', exact: true }).click()
+  await page.getByRole('button', { name: '編輯生活現金' }).click()
+  await page.getByLabel('封存帳戶（保留歷史紀錄）', { exact: true }).check()
+  await page.getByRole('button', { name: '保存帳戶' }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: '生活現金' })).not.toBeVisible()
+  await page.getByLabel('顯示已封存').check()
+  await expect(page.locator('.account-card-balance')).toContainText('940')
+  await page.getByRole('button', { name: '編輯生活現金' }).click()
+  await page.getByLabel('封存帳戶（保留歷史紀錄）', { exact: true }).uncheck()
+  await page.getByLabel('納入總餘額', { exact: true }).check()
+  await page.getByRole('button', { name: '保存帳戶' }).click()
+  await expect(dialog).not.toBeVisible()
+  await page.getByRole('link', { name: '總覽', exact: true }).click()
+  await expect(page.locator('.balance-number')).toHaveText('940')
+})
+
+test('cross-currency transfer detail shows both legs and net fees', async ({ page }) => {
+  await installDrive(page)
+  await connect(page)
+  await createAccount(page, '日常現金', '10000')
+  await page.getByRole('button', { name: '新增帳戶', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).not.toHaveClass(/p-dialog-enter-(active|from|to)/)
+  await page.getByLabel('帳戶名稱', { exact: true }).fill('美元帳戶')
+  await page.getByLabel('主幣種', { exact: true }).selectOption('USD')
+  await page.getByRole('button', { name: '保存帳戶', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await openExpense(page)
+  await page.getByRole('button', { name: '轉帳', exact: true }).click()
+  await page.getByLabel('轉入帳戶', { exact: true }).selectOption({ label: '美元帳戶 · USD' })
+  await page.getByLabel('第 1 行金額', { exact: true }).fill('3200')
+  await page.getByLabel('第 1 行轉入金額', { exact: true }).fill('100')
+  await page.getByLabel('手續費', { exact: true }).fill('30')
+  await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await page.getByRole('button', { name: /早餐三明治.*3,200/ }).click()
+  await expect(dialog).toContainText('轉入合計 USD 100')
+  await expect(dialog).toContainText('來源實扣 TWD 3,230')
+  await page.keyboard.press('Escape')
+  await page.getByRole('link', { name: '總覽', exact: true }).click()
+  await expect(page.locator('.balance-number')).toHaveText('6,770')
+  await page.getByLabel('總覽幣種').selectOption('USD')
+  await expect(page.locator('.balance-number')).toHaveText('100')
 })

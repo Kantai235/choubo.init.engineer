@@ -1,0 +1,78 @@
+// Surfaces and financial states share the same roles in both schemes.
+:root {
+  color-scheme: light;
+  --canvas: #f4f7fa;
+  --surface: #ffffff;
+  --subtle: #edf1f6;
+  --ink: #263244;
+  --muted: #596a80;
+  --line: #dce3ed;
+  --control-border: #8593a6;
+  --blue: #365cc2;
+  --action: #3d65d5;
+  --action-hover: #2e52ba;
+  --on-primary: #ffffff;
+  --accent-soft: #e8effc;
+  --green: #176f59;
+  --success-soft: #e5f2ec;
+  --red: #a14b39;
+  --expense-soft: #f7ede6;
+  --ochre: #886023;
+  --purple: #705297;
+  --purple-soft: #efe9f7;
+  --warning: #884721;
+  --warning-soft: #fff0e8;
+  --danger-action: #a94c3b;
+  --on-danger: #ffffff;
+  --focus: #3d65d5;
+  --selection: #cdddff;
+  --balance: #3b60ca;
+  --balance-select: #304da5;
+  --balance-ink: #ffffff;
+  --balance-muted: #e1e9ff;
+  --book-cover: #dce6f8;
+  --book-rule: #a9bbdc;
+  --book-ink: #365994;
+  --overlay: #16233888;
+  --shadow: 0 12px 28px #233f6220;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #111821;
+    --surface: #1b2532;
+    --subtle: #253244;
+    --ink: #e5ecf5;
+    --muted: #aebed2;
+    --line: #344359;
+    --control-border: #74869e;
+    --blue: #a2bfff;
+    --action: #9cb9ff;
+    --action-hover: #bdd0ff;
+    --on-primary: #162440;
+    --accent-soft: #293c5c;
+    --green: #82d9b8;
+    --success-soft: #203d36;
+    --red: #f2ab98;
+    --expense-soft: #3c2e29;
+    --ochre: #e2bc81;
+    --purple: #ccb2f0;
+    --purple-soft: #362e46;
+    --warning: #f3c49f;
+    --warning-soft: #422f26;
+    --danger-action: #f1ab99;
+    --on-danger: #361a14;
+    --focus: #a2bfff;
+    --selection: #3e557a;
+    --balance: #273f78;
+    --balance-select: #203462;
+    --balance-ink: #f0f4ff;
+    --balance-muted: #c5d6ff;
+    --book-cover: #293b59;
+    --book-rule: #566d92;
+    --book-ink: #b9cff2;
+    --overlay: #060b13ba;
+    --shadow: 0 12px 28px #00000038;
+  }
+}

@@ -26,3 +26,11 @@
 ## 實作後畫面檢查
 
 2026-10-02 以 Chrome 擷取桌面 1440 × 1000 與手機 360 × 800 檢視。帳戶總額、單筆摘要與明細金額的層級清楚；手機編輯視窗可捲動，欄位與金額無水平溢位。PrimeVue 重大版本的商業授權提示已透過採用 MIT 版本移除，測試另外檢查不再出現。Google OAuth 的真實彈窗與行動瀏覽器鍵盤仍待實機驗收。
+
+## 2026-10-02：系統暗色模式與核對
+
+本次擴充既有視覺，保留布局與帳簿藍，以 `src/styles/_theme.scss` 集中定義語意色彩。亮色為紙白／霧灰；暗色為深墨藍畫布 `#111821`、表面 `#1b2532`、主文字 `#e5ecf5`，降低大面積白光，保留收入綠、費用暖色與狀態文字。裝飾、邊線、輸入框、原生控制、捲軸、選取與焦點一起適配。
+
+使用 CSS `prefers-color-scheme`，預設及即時變更都跟隨系統，無額外儲存或登入依賴；本輪未加手動主題覆寫。PrimeVue 4 使用 `darkModeSelector: 'system'` 及 Dialog preset tokens，避免動態注入樣式覆蓋應用表面。隱私頁採相同系統模式。[MDN 主題查詢](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-color-scheme)、[PrimeVue 主題設定](https://primevue.dev/theming/styled/)
+
+可見文字對比及 1440／360 頁面溢位納入 E2E；主題切換測試在表單開啟時執行，確認輸入與連線不變。手機表單改單欄、圖示按鈕增至 44 px，長名稱及金額可換行。詳細檢查範圍與尚缺 UI 見 [核對報告](../development/requirements-ui-audit.md)，不代表讀屏／所有瀏覽器與未實作模組已驗收。
