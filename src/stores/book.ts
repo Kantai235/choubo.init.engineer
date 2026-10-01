@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 import { LedgerSession } from '../application/session'
 import { DriveClient, DriveError, openDrive, bindingSchema } from '../infrastructure/drive'
 import { configuredClientId, requestToken, preloadGoogle } from '../infrastructure/auth'
+import { AuthSessionStorage, type AuthSession } from '../infrastructure/auth-session'
 import { LocalRepository, bindingKey } from '../infrastructure/local'
 import { project, balances } from '../domain/ledger'
 import {
@@ -23,6 +24,7 @@ export const useBookStore = defineStore('book', () => {
   const pending = shallowRef<Operation[]>([])
   const working = ref(false)
   const connecting = ref(false)
+  const restoring = ref(false)
   const ready = ref(false)
   const error = ref('')
   const notice = ref('')
@@ -31,6 +33,10 @@ export const useBookStore = defineStore('book', () => {
   const online = ref(navigator.onLine)
   const clientId = ref(configuredClientId())
   const folderUrl = ref('')
+  const credentials = new AuthSessionStorage()
+  let authExpiresAt = 0
+  let restoreRetry = false
+  let expiryTimer: ReturnType<typeof setTimeout> | undefined
   let active: LedgerSession | undefined
   let abort: AbortController | undefined
   let epoch = 0
@@ -43,21 +49,25 @@ export const useBookStore = defineStore('book', () => {
     ),
   )
   const status = computed(() =>
-    !identity.value
-      ? '尚未連接'
-      : !online.value
-        ? '離線，可編輯草稿'
-        : working.value || connecting.value
-          ? '正在同步'
-          : cached.value
-            ? '快取資料，等待核對'
-            : error.value
-              ? '需要處理'
-              : pending.value.length
-                ? '有待確認提交'
-                : ready.value
-                  ? '已連接 Google Drive'
-                  : '需要重新連接',
+    restoring.value
+      ? '正在恢復 Google Drive'
+      : !identity.value
+        ? error.value
+          ? '需要重新連接'
+          : '尚未連接'
+        : !online.value
+          ? '離線，可編輯草稿'
+          : working.value || connecting.value
+            ? '正在同步'
+            : cached.value
+              ? '快取資料，等待核對'
+              : error.value
+                ? '需要處理'
+                : pending.value.length
+                  ? '有待確認提交'
+                  : ready.value
+                    ? '已連接 Google Drive'
+                    : '需要重新連接',
   )
   function update(session: LedgerSession) {
     if (active !== session) return
@@ -67,8 +77,33 @@ export const useBookStore = defineStore('book', () => {
     lastSyncedAt.value = session.lastSyncedAt
     cached.value = false
   }
+  function forgetCredential() {
+    const cleared = credentials.clear()
+    authExpiresAt = 0
+    restoreRetry = false
+    clearTimeout(expiryTimer)
+    if (!cleared) notice.value = '瀏覽器無法清除分頁授權暫存，請關閉此分頁並清除網站資料。'
+  }
+  function expireCredential() {
+    forgetCredential()
+    ready.value = false
+    error.value = 'Google 授權已到期或失效，請到設定重新連接；草稿及待確認提交已保留'
+  }
+  function scheduleExpiry(expiresAt: number) {
+    authExpiresAt = expiresAt
+    clearTimeout(expiryTimer)
+    // Recheck after background throttling, and avoid timer overflow.
+    expiryTimer = setTimeout(
+      () => {
+        if (Date.now() >= expiresAt) expireCredential()
+        else scheduleExpiry(expiresAt)
+      },
+      Math.min(Math.max(0, expiresAt - Date.now()), 2_147_483_647),
+    )
+  }
   async function run(action: (session: LedgerSession) => Promise<unknown>, message = '') {
     const session = active
+    if (authExpiresAt && Date.now() >= authExpiresAt) expireCredential()
     if (!session || !ready.value) throw new Error('請先連接 Google Drive')
     if (!online.value) throw new Error('目前離線，請保留草稿後再提交')
     if (working.value) throw new Error('正在處理上一項操作，請稍候')
@@ -85,7 +120,7 @@ export const useBookStore = defineStore('book', () => {
       if (active !== session) return
       update(session)
       error.value = caught instanceof Error ? caught.message : '操作未完成，請再試一次'
-      if (caught instanceof DriveError && caught.status === 401) ready.value = false
+      if (caught instanceof DriveError && caught.status === 401) expireCredential()
       throw caught
     } finally {
       if (active === session) working.value = false
@@ -97,6 +132,10 @@ export const useBookStore = defineStore('book', () => {
     active = undefined
     broadcast?.close()
     clearTimeout(timer)
+    clearTimeout(expiryTimer)
+    authExpiresAt = 0
+    restoreRetry = false
+    restoring.value = false
     identity.value = null
     ledger.value = project([])
     drafts.value = []
@@ -108,20 +147,28 @@ export const useBookStore = defineStore('book', () => {
     lastSyncedAt.value = ''
     folderUrl.value = ''
   }
-  async function connect() {
-    clearSession()
+  async function establish(
+    authRequest: () => Promise<Pick<AuthSession, 'token' | 'expiresAt'>>,
+    savedOwner?: string,
+  ) {
     const current = epoch
     connecting.value = true
     error.value = ''
-    notice.value = ''
     const controller = new AbortController()
     abort = controller
     try {
-      const auth = await requestToken(clientId.value)
+      const auth = await authRequest()
       if (current !== epoch) return
       const client = new DriveClient(auth.token, auth.expiresAt, controller.signal)
       const user = await client.identity()
       if (current !== epoch) return
+      // Never trust the stored owner/client binding as proof of authorization.
+      if (savedOwner && savedOwner !== user.id)
+        throw new DriveError('Google 帳號與分頁暫存不符，請重新連接', 401)
+      if (Date.now() >= auth.expiresAt) throw new DriveError('Google 授權已到期，請重新連接', 401)
+      if (!credentials.save({ version: 1, clientId: clientId.value, ownerId: user.id, ...auth }))
+        notice.value = '瀏覽器無法保存分頁授權，這次連線仍可使用，重整後需重新連接。'
+      scheduleExpiry(auth.expiresAt)
       identity.value = user
       const saved = localStorage.getItem(bindingKey(user.id))
       if (saved) {
@@ -155,6 +202,7 @@ export const useBookStore = defineStore('book', () => {
       active = session
       await session.sync()
       if (current !== epoch) return
+      if (Date.now() >= auth.expiresAt) throw new DriveError('Google 授權已到期，請重新連接', 401)
       ready.value = true
       update(session)
       folderUrl.value = `https://drive.google.com/drive/folders/${opened.cloud.binding.rootId}`
@@ -165,16 +213,53 @@ export const useBookStore = defineStore('book', () => {
         }
       }
     } catch (caught) {
-      if (current === epoch)
-        error.value = caught instanceof Error ? caught.message : 'Google 連接未完成'
+      if (current !== epoch) return
+      error.value = caught instanceof Error ? caught.message : 'Google 連接未完成'
+      if (caught instanceof DriveError && caught.status === 401) {
+        forgetCredential()
+        ready.value = false
+      } else if (savedOwner && !identity.value) {
+        // A transient network error is not a revoked authorization. Retry only
+        // identity verification when online; never reveal cached data yet.
+        restoreRetry = true
+        error.value = '暫時無法向 Google 驗證連線，將於恢復網路後重試；也可手動重新連接'
+      }
     } finally {
-      if (current === epoch) connecting.value = false
+      if (current === epoch) {
+        connecting.value = false
+        restoring.value = false
+      }
     }
+  }
+  async function connect() {
+    clearSession()
+    notice.value = ''
+    forgetCredential() // Clear before the account picker, even if it is cancelled.
+    await establish(() => requestToken(clientId.value))
+  }
+  async function restoreConnection() {
+    if (connecting.value || ready.value) return
+    const saved = credentials.read(clientId.value)
+    if (saved.state !== 'valid') {
+      restoreRetry = false
+      if (saved.state === 'expired' || saved.state === 'invalid')
+        error.value = '分頁授權已到期或失效，請重新連接 Google Drive'
+      return
+    }
+    clearSession()
+    restoring.value = true
+    // Keep the original expiry; reloading must never extend a Google grant.
+    scheduleExpiry(saved.value.expiresAt)
+    await establish(
+      async () => ({ token: saved.value.token, expiresAt: saved.value.expiresAt }),
+      saved.value.ownerId,
+    )
   }
   function disconnect() {
     clearSession()
     error.value = ''
     notice.value = '已登出，草稿保留在原使用者的本機空間'
+    forgetCredential()
   }
   async function sync() {
     if (active && ready.value) await run((s) => s.sync())
@@ -245,6 +330,8 @@ export const useBookStore = defineStore('book', () => {
   }
   function initEvents() {
     const foreground = () => {
+      if (authExpiresAt && Date.now() >= authExpiresAt) expireCredential()
+      if (restoreRetry && online.value && !connecting.value) void restoreConnection()
       if (document.visibilityState === 'visible' && ready.value && online.value && !working.value)
         void sync().catch(() => undefined)
     }
@@ -264,6 +351,7 @@ export const useBookStore = defineStore('book', () => {
       window.removeEventListener('offline', onOffline)
       document.removeEventListener('visibilitychange', foreground)
       clearInterval(interval)
+      clearTimeout(expiryTimer)
       clearTimeout(timer)
       abort?.abort()
       broadcast?.close()
@@ -277,6 +365,7 @@ export const useBookStore = defineStore('book', () => {
     pending,
     working,
     connecting,
+    restoring,
     ready,
     error,
     notice,
@@ -288,6 +377,7 @@ export const useBookStore = defineStore('book', () => {
     accountBalances,
     folderUrl,
     connect,
+    restoreConnection,
     disconnect,
     sync,
     saveDraft,

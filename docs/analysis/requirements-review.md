@@ -1,5 +1,7 @@
 # 網頁記帳程式需求報告：完整審查與設計對應
 
+> 現行授權政策已更新為 v0.5：短期 token 可存 sessionStorage；原文 memory-only 為歷史決策。詳見 [分頁授權恢復](../development/google-session.md)。
+
 > 歷史審查：本文針對 v0.2，保留當時的問題分析及建議。相關決策後續已整合至 [v0.4 需求報告](../requirements/system-analysis-and-requirements.md)；文中的本機預設、離線入帳及待確認狀態不作為現行規格。
 
 審查日期：2026 年 10 月 1 日｜審查基準：需求報告 v0.2｜性質：需求、帳務規則與系統設計審查。

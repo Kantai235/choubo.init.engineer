@@ -1,8 +1,8 @@
 # 網頁記帳程式系統分析與需求報告
 
-版本：v0.4 已確認需求整合｜更新日期：2026 年 10 月 2 日｜適用對象：產品規劃、前端開發、測試人員。
+版本：v0.5 已確認需求整合（短期授權恢復更新）｜更新日期：2026 年 10 月 2 日｜適用對象：產品規劃、前端開發、測試人員。
 
-本報告為網頁記帳程式的開發需求基準，涵蓋帳戶、六種紀錄、多筆分類明細、信用帳單、回饋、週期與分期、資料儲存及同步。系統採無後台的純前端架構，正式使用必須連接使用者自己的 Google Drive，正式帳務以本人 My Drive 根目錄下專用資料夾的有效資料為準。localStorage 用於快速載入、有限快取、偏好與受保護暫存，相關可攜資料亦非同步同步至 Drive；access token 只放記憶體。新紀錄須經 Drive 確認保存及必要驗證後才正式入帳。
+本報告為網頁記帳程式的開發需求基準，涵蓋帳戶、六種紀錄、多筆分類明細、信用帳單、回饋、週期與分期、資料儲存及同步。系統採無後台的純前端架構，正式使用必須連接使用者自己的 Google Drive，正式帳務以本人 My Drive 根目錄下專用資料夾的有效資料為準。localStorage 用於快速載入、有限快取、偏好與受保護暫存，相關可攜資料亦非同步同步至 Drive；短期 access token 僅存記憶體與 sessionStorage，同分頁重整先向 Google 驗證身分再恢復帳本。新紀錄須經 Drive 確認保存及必要驗證後才正式入帳。
 
 本版已整合使用者確認的 Google Drive 優先方案與本機快取非同步同步規則，取代先前可略過 Google 登入、獨立本機帳本及離線正式入帳的規格。使用者已接受的帳單、分期、退款、回饋、儲值、報帳、分類及復原規則已回寫各章；「工程建議」僅用於容量預算、效能目標與實作選擇。自動儲值及繳款只建立帳務紀錄，不實際移轉金錢。分階段交付不移除原始需求；本文與驗收案例不代表功能已開發或測試完成。
 
@@ -524,7 +524,7 @@
 ```mermaid
 flowchart TD
     HOST[靜態網站主機] --> UI[瀏覽器介面與多筆明細]
-    AUTH[Google 授權與記憶體 token] --> SYNC[雲端取得與非同步提交]
+    AUTH[Google 授權與分頁短期 token] --> SYNC[雲端取得與非同步提交]
     CACHE[localStorage 快取與受保護草稿] --> UI
     UI --> DRAFT[草稿自動暫存]
     DRAFT --> CACHE
@@ -556,7 +556,7 @@ localStorage 的用途是加快載入及保護尚未完成的工作，完整正�
 | 編輯草稿 | 自動非同步保存至 drafts；包含全部明細、所有者、版本及基礎交易版本 | 最新未確認版本受保護；雲端已保存仍不算入帳 |
 | 已提交但結果待確認的操作 | 保存完整操作組、operationId、batchId、依賴版本與重試識別 | 查明雲端結果並可復原後才清除，不能當一般快取淘汰 |
 | 裝置狀態與連線提示 | folderId／bookId 可作重新查找提示；游標、鎖及工作階段屬本裝置 | 不把另一裝置的游標、鎖或授權狀態直接套用 |
-| access token | 只放記憶體，不寫入 localStorage、Drive、匯出或日誌 | 登出、切換帳號及關站即清除 |
+| access token | 僅存記憶體與 sessionStorage，不寫入 localStorage、Drive、匯出、日誌或 GitHub | 保留 Google 原到期時間；到期、401、帳號不符、登出或切帳號即清除；關閉分頁通常清除，但瀏覽器恢復行為不可作安全保證 |
 
 「本機內容非同步同步」指可攜資料及完整操作的同步，不是原樣上傳所有 localStorage key。Drive 的 draft、preferences、operation 有明確角色；快取內同一交易不再當成一筆新增交易。
 
@@ -582,17 +582,21 @@ localStorage 的用途是加快載入及保護尚未完成的工作，完整正�
 
 使用 drive.file 範圍操作本應用建立或經使用者明確選取授權的檔案，無須取得整個 Drive 的廣泛讀寫權限。授權某個資料夾不代表能自動讀取所有由外部建立的子檔，恢復外部檔案時須確認應用具有逐檔存取權。資料夾與帳本只屬於當前使用者，應用不建立共享權限、不提供多人共用入口，也不使用所有使用者共通的帳務資料夾。[Google Drive 權限範圍](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 
-正式使用必須連接 Google Drive。Google Identity Services 的瀏覽器 token 模式由使用者操作取得短期 access token；過期後可能需要再次由使用者觸發，不承諾永久背景續期。access token 只放記憶體，client secret 與 refresh token 不放前端。[Google Token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
+正式使用必須連接 Google Drive。Google Identity Services 的瀏覽器 token 模式由使用者操作取得短期 access token；過期後可能需要再次由使用者觸發，不承諾永久背景續期。依使用者 2026-10-02 確認，短期 access token 可存記憶體與 sessionStorage；client secret 與 refresh token 不放前端。重整讀取暫存後，先核對格式、Client ID 與原到期時間，再向 Drive `about.user` 取得穩定識別並比對原 ownerId；成功後才顯示快取、載入帳本及同步。暫存內容不能當成身分驗證。[Google Token 模式](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
 
 上線前需建立 Google Cloud 專案、啟用 Drive API、配置 OAuth 同意畫面及允許的網站來源，區分測試與正式環境，並完成所用權限要求的驗證。這是開發部署工作，不是要求使用者自行建立 Google Cloud 專案。
 
-token 過期時保留草稿及待確認提交，顯示「重新連接 Google Drive」；停止正式入帳及自動帳務，不反覆自動彈出授權視窗。網站不部署授權碼交換後台，也不保存 refresh token。localStorage 可被同來源程式讀取，記憶體保存 token 也不取代輸入驗證與第三方程式管控。[OWASP HTML5 Security](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)
+sessionStorage 沒有固定天數 TTL，通常維持到分頁關閉，重新整理可保留；瀏覽器還原分頁可能恢復內容，不能保證永久保存或關站立即抹除。實際可用時間以 Google 回傳 `expires_in` 換算的原始 `expiresAt` 為準，重整不可重新起算。沒有有效暫存便由使用者重新連接，不自動彈窗。[MDN sessionStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage)
+
+過期、Google 回傳 401 或帳號不符時刪除分頁授權；暫時網路錯誤保留未過期授權並稍後重試身分驗證。sessionStorage 不可用時允許當次記憶體連線，清楚告知重整需要重連。登出僅清除此分頁連線；解除 Google 授權需至 Google 帳號操作；其他既有分頁有各自的授權狀態。完整工程流程見 [分頁授權恢復](../development/google-session.md)。
+
+token 過期時保留草稿及待確認提交，顯示「重新連接 Google Drive」；停止正式入帳及自動帳務，不反覆自動彈出授權視窗。網站不部署授權碼交換後台，也不保存 refresh token。sessionStorage 與 localStorage 都可被同來源程式讀取，分頁暫存不是 XSS 防護；僅允許短期 token 進入獨立的 sessionStorage key，不得混入帳務、偏好或可攜同步資料。[OWASP HTML5 Security](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)
 
 ### 16.2 第一次連接與帳本歸屬
 
 首次使用先由 Google 確認當前使用者，查找本人擁有且應用可存取的專用資料夾；找到後按 folderId 連接，不存在才在 root 建立。已有帳本就載入，沒有才建立新 bookId、TWD、時區及種子資料，經 Drive 確認後啟用。保留 v0.2 既有本機資料的一次性導入流程：核對歸屬、筆數、資源及狀態後預覽，明確導入至選定資料集；不自動將另一帳號的草稿重新歸屬或覆蓋雲端帳本。
 
-Google API 回傳的穩定使用者識別、專用 folderId 與 bookId 一起綁定本機資料，不能只用可更改的電子郵件或資料夾名稱辨識所有者。使用者 A 切換為 B 時停止 A 的同步工作、清除 A 的記憶體 token 與畫面狀態，載入 B 的隔離命名空間；A 的待送資料保留在 A 的命名空間且不可送往 B。登出後不繼續顯示上一位使用者的帳務；本機保留／清除可由使用者選擇。斷開連線、刪除雲端資料、清除裝置資料及解除 Google 授權是不同操作。Google 權限是雲端存取的邊界，本機命名空間負責避免誤讀誤傳，不宣稱能抵擋共用裝置上具有開發者工具權限的人。
+Google API 回傳的穩定使用者識別、專用 folderId 與 bookId 一起綁定本機資料，不能只用可更改的電子郵件或資料夾名稱辨識所有者。使用者 A 切換為 B 時停止 A 的同步工作、在開啟帳號選擇前清除 A 的記憶體及 sessionStorage token 與畫面狀態（取消切換也不得恢復舊 token），載入 B 的隔離命名空間；A 的待送資料保留在 A 的命名空間且不可送往 B。登出後不繼續顯示上一位使用者的帳務；本機保留／清除可由使用者選擇。斷開連線、刪除雲端資料、清除裝置資料及解除 Google 授權是不同操作。Google 權限是雲端存取的邊界，本機命名空間負責避免誤讀誤傳，不宣稱能抵擋共用裝置上具有開發者工具權限的人。
 
 所有異步請求帶 ownerId、bookId、sessionEpoch；切換帳號即換 epoch，晚返回的 A 請求不得更新 B 的畫面、快取或游標。啟動先驗證身分再顯示該使用者的可用快取；本機 email、folderId 或 token 曾存在不代表本次已授權。
 
@@ -776,7 +780,7 @@ app.json 與 manifest.json 保存識別、作用中帳本選擇及可驗證索�
 | 相容性 | 上線時選定 Chrome、Edge、Firefox、Safari 與 iOS／Android 的支援版本並驗收；能力不支援時明示降級 |
 | 易用性 | 360 px 手機寬度可完成完整記帳；金額欄用數字鍵盤；重要功能支援鍵盤及讀屏標籤 |
 | 外觀（2026-10-02 補充） | 預設跟隨作業系統亮／暗設定，系統變更時即時更新；涵蓋頁面、原生欄位、對話框、錯誤狀態及隱私頁，切換不得影響表單、帳務或授權狀態 |
-| 安全 | HTTPS、輸入驗證、內容不直接當 HTML、嚴格限制第三方腳本、匯入檔完整驗證、OAuth 憑證不持久存前端 |
+| 安全 | HTTPS、輸入驗證、內容不直接當 HTML、嚴格限制第三方腳本、匯入檔完整驗證、短期 token 僅允許記憶體／sessionStorage；不存 refresh token 或 client secret；不將憑證提交 GitHub |
 | 隱私 | 各使用者 Drive、本機快取與待送資料隔離；不集中保存財務資料，不向分析／錯誤服務傳送金額、備註、發票、名稱及 token |
 | 可維護性 | 計算核心不依賴 UI；金額、日期、規則、資料版本有獨立測試；種子清單可版本化更新 |
 
@@ -862,7 +866,7 @@ M1 是可試用的最小版本，不是全部需求已完成。完整交付需�
 | AT57 | 同一已驗證帳號重開且有相容快取 | 先顯示上次雲端確認值與時間及核對中，背景拉取變更；未確認新增不混入正式餘額 |
 | AT58 | 編輯多明細草稿，雲端自動保存成功 | 顯示草稿已同步；跨裝置可恢復，正式餘額、帳單、回饋與消費次數均不變 |
 | AT59 | 草稿雲端已存 v1，本機 v2 尚未上傳而清快取 | 只清一般快取；保留 v2。明確捨棄或相同版本確認保存前不可自動刪除 |
-| AT60 | 關站再開、重新取得 Google 授權 | localStorage、Drive、備份及日誌無 access token；新 token 僅記憶體，未授權不顯示上一人資料 |
+| AT60 | 同分頁重整、到期／失效、登出／切帳號及關站再開 | 有效短期 token 可從 sessionStorage 恢復；先向 Google 驗證原帳號再讀快取並同步，不延長原期限。過期／失效／登出／切帳號清除；localStorage、Drive、匯出、日誌及 GitHub 無 token，未驗證不顯示帳務 |
 | AT61 | 清空一般快取但留下舊增量游標 | 由相符快照及必要批次重建，再追變更；不能只拉舊游標後資料而漏掉歷史帳目 |
 | AT62 | 首次分頁掃描期間另一裝置新增交易 | 先取得起點游標、掃描後補讀變更，新增只出現一次且不漏帳 |
 | AT63 | 兩裝置各退 80，原單剩餘可退 100 | 不同 operationId 仍檢查共同上限；保留候選資料、要求處理，不把 160 全列合法退本 |
@@ -921,7 +925,7 @@ M1 是可試用的最小版本，不是全部需求已完成。完整交付需�
 | 工作日及行情 | 先週末加自訂假日、手動匯率，外部服務另選 | 4、11 |
 | 多筆明細 | 六種類型皆支援，同筆共用帳戶、幣種與日期，每行有分類、名稱與金額 | 10、17、18 |
 | 正式保存時點 | Drive 確認及驗證後才正式入帳；草稿同步不等於入帳，斷線只可草稿 | 10、13～19；AT01、30、33、57～60 |
-| Token 與隔離 | token 只放記憶體；同一已驗證帳號先讀快取，切帳號阻擋遲到回應 | 15～19；AT36、42、60 |
+| Token 與隔離 | 短期 token 僅存記憶體／sessionStorage；恢復先向 Google 核對同一帳號，再讀快取同步；到期／登出／切帳號清除並阻擋遲到回應 | 15～19；AT36、42、60 |
 | 並發與共同上限 | 穩定 ID、基礎版本、來源／目標及群組上限一起驗證 | 6～7、16～17；AT13、18、34～35、63 |
 | 帳單結轉與群組 | 唯一欠款引用、群組下一完整帳期生效、全組付款原子提交 | 6、17；AT56、64～69 |
 | 到期日與晚到正向款 | 結帳後至少一日；到期日預設不順延；晚到退款不改已付款 | 6；AT10、65、67 |

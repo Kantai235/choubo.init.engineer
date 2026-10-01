@@ -10,7 +10,7 @@
 | 私人內容 | 移除文件中的私人 Page 連結、其他私人專案名稱、本機個人目錄；保留相對文件連結 |
 | 檔案排除 | `.env*`（範本除外）、憑證、私鑰、套件設定、帳務匯出、測試 trace、暫存、依賴與打包輸出不提交 |
 | 套件稽核 | `pnpm audit`：所有嚴重性共 0 項已知漏洞；此為檢查時的供應商資料庫結果 |
-| token | 僅放記憶體；不寫 localStorage、環境檔、日誌或 URL；授權回傳需含 `drive.file` |
+| token（現行） | 使用者已確認短期 token 可存記憶體及獨立 sessionStorage；不寫 localStorage、Drive、匯出、環境檔、日誌或 URL；授權回傳需含 `drive.file` 及有效 expires_in；恢復先向 Google 驗證帳號 |
 | 最小 Drive 權限 | 僅 `drive.file`；核對使用者、帳本、資料夾父項與檔案 metadata；不建立跨使用者分享 |
 | 本機資料隔離 | 草稿與 pending 讀出時重驗 ownerId／bookId；異常時停止且保留原資料 |
 | HTML 注入 | Vue 純文字插值；惡意 HTML 瀏覽器案例通過；無 `v-html` 或 eval |
@@ -35,13 +35,23 @@
 ## 已知安全邊界
 
 - localStorage 及 Drive JSON 未做端對端加密；共享電腦需保護作業系統／瀏覽器登入。帳號隔離不是防止本機管理員讀取的加密機制。
-- 記憶體 token 仍可能受同來源 XSS／惡意擴充功能影響；CSP 是額外防護，不能代替輸入與供應鏈控制。
+- 記憶體與 sessionStorage token 都可能受同來源 XSS／惡意擴充功能影響；CSP 是額外防護，不能代替輸入與供應鏈控制。
 - GitHub Pages 不提供專案自訂 HTTP 標頭；meta CSP 不能套用 `frame-ancestors`、HSTS 或 COOP。正式 origin 的真實 GIS popup 已抵達 Google 授權確認頁；實際取得 token 與 Drive 寫入另列於進度文件。
 - Drive 沒有本應用所需的跨檔案交易鎖；未完成共同額度上限、進階衝突解決、還原與遷移。不得宣稱金融系統等級一致性或完整 90 項驗收通過。
 - 公開 OAuth Client ID、網站網域與 Google Cloud 專案 ID 是公開識別資訊；Client Secret、access／refresh token、Service Account key 不可提交或放入 Vite 環境變數。
 
 ## 2026-10-02：需求核對與暗色模式提交
 
-本輪變更不增加 Google scope、第三方腳本或憑證儲存；access token 仍僅記憶體。主題以 CSS 系統偏好決定，不新增 localStorage／sessionStorage key。帳務修改限於報表的對帳差額篩選及查詢／明細展示，不重寫已存在的 Drive 操作。
+此段為暗色模式提交當時的歷史紀錄，後續授權策略以本文「分頁授權恢復」為準。該輪變更不增加 Google scope、第三方腳本或憑證儲存；當時 access token 仍僅記憶體。主題以 CSS 系統偏好決定，不新增 localStorage／sessionStorage key。帳務修改限於報表的對帳差額篩選及查詢／明細展示，不重寫已存在的 Drive 操作。
 
 提交前禁止路徑／憑證格式檢查通過；Gitleaks 對 staged diff 與 production `dist/` 掃描均無發現，`pnpm audit` 無已知漏洞。測試截圖只含模擬資料並保持不提交；報告不含真實 Drive ID、使用者 token 或個人電郵。本輪新增的資料讀寫模擬不等同真實跨裝置資安驗收。
+
+## 2026-10-02：分頁授權恢復
+
+依使用者明確要求將 memory-only 改為短期 token 可存 sessionStorage，並同步需求、AGENTS 與隱私說明。此決策增加同來源 JavaScript 可讀的分頁暫存，不提供 XSS 隔離或永久登入保證。維持最小 drive.file、CSP、輸入驗證及純前端架構。
+
+新增獨立授權 repository；token 不放可序列化 Pinia、帳務／偏好 repository 或匯出資料。保存後仍須以原到期時間檢查，恢復時向 Google 驗證穩定 ownerId，驗證前不顯示快取；401／到期／錯帳號／登出／切帳號清除，epoch 阻擋遲到回應重新存入。取消切換也不恢復舊 token。儲存被封鎖不改存 localStorage，明示當次記憶體降級；清除失敗明示使用者處理。
+
+58 項單元／契約、27 項隔離 Chrome 模擬流程通過；含實際下載 JSON、localStorage 與模擬 Drive 檔案檢查不含測試 token，並覆蓋有效重整、原期限、到期、恢復及使用中 401、錯帳號、取消切換、延遲登出和草稿／pending 保護。lint、型別與 build 通過，pnpm audit 無已知漏洞。歷史 9 個提交與本次 production dist 經 Gitleaks 掃描無發現；提交前亦檢查本次 staged diff 與禁止敏感檔案。掃描不保證未知漏洞不存在。
+
+測試使用假憑證；沒有收集或記錄使用者實際 token。此結果不等同真實 Google 到期續接、所有瀏覽器分頁還原或跨裝置驗收。

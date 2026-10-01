@@ -1,5 +1,7 @@
 # 網頁記帳程式 Google Drive 優先設計方案
 
+> 現行授權政策已更新為 v0.5：短期 token 可存 sessionStorage；原文 memory-only 為歷史決策。詳見 [分頁授權恢復](../development/google-session.md)。
+
 > 歷史方案：本文已併入 [v0.4 需求報告](../requirements/system-analysis-and-requirements.md)。開發以 v0.4 為準；保留此文件供查閱設計理由與演進。
 
 版本：v0.3 歷史方案｜原日期：2026 年 10 月 1 日｜2026 年 10 月 2 日已整合至[系統分析與需求報告 v0.4](../requirements/system-analysis-and-requirements.md)。下文保留提案歷程；使用者已接受相關規則，開發請以 v0.4 為準，其中也包含最新的草稿及可攜偏好非同步同步設計。

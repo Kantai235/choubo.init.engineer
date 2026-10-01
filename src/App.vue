@@ -63,6 +63,7 @@ watch(
 let cleanup: (() => void) | undefined
 onMounted(() => {
   cleanup = store.initEvents()
+  void store.restoreConnection()
   if (store.clientId) void preloadGoogle()
 })
 onBeforeUnmount(() => cleanup?.())
@@ -105,7 +106,7 @@ async function reverse() {
           ><span
             ><strong>{{ store.identity?.name || '我的個人帳簿' }}</strong
             ><small>{{
-              store.identity ? 'Google Drive 已授權' : '等待連接 Google Drive'
+              store.ready ? 'Google Drive 已授權' : '等待連接 Google Drive'
             }}</small></span
           >
         </div>

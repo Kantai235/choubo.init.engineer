@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+import { AUTH_SESSION_KEY } from '../../src/infrastructure/auth-session'
 
 type File = {
   id: string
@@ -24,20 +26,46 @@ async function installDrive(page: Page) {
   // to the root folder's metadata. API responses contain real parent IDs.
   const files = new Map<string, File>()
   let id = 0
-  const control = { failOperations: false, ownerId: 'alice-user', rootMetadataReads: 0, files }
+  const control = {
+    failOperations: false,
+    ownerId: 'alice-user',
+    rootMetadataReads: 0,
+    files,
+    oauthCalls: 0,
+    cancelOAuth: false,
+    expiresIn: 3600,
+    identityStatus: 200,
+    apiStatus: 200,
+    identityWait: undefined as Promise<void> | undefined,
+    requests: [] as string[],
+  }
+  await page.exposeFunction('mockAuthorize', () => {
+    control.oauthCalls++
+    return { cancel: control.cancelOAuth, expiresIn: control.expiresIn }
+  })
   await page.addInitScript(() => {
     localStorage.setItem('choubo:google-client-id', 'test.apps.googleusercontent.com')
     Object.assign(window, {
       google: {
         accounts: {
           oauth2: {
-            initTokenClient: (config: { callback: (data: unknown) => void }) => ({
-              requestAccessToken: () =>
+            initTokenClient: (config: {
+              callback: (data: unknown) => void
+              error_callback: (data: unknown) => void
+            }) => ({
+              requestAccessToken: async () => {
+                const mock = await (
+                  window as unknown as {
+                    mockAuthorize: () => Promise<{ cancel: boolean; expiresIn: number }>
+                  }
+                ).mockAuthorize()
+                if (mock.cancel) return config.error_callback({ type: 'popup_closed' })
                 config.callback({
                   access_token: 'test-memory-token',
                   scope: 'https://www.googleapis.com/auth/drive.file',
-                  expires_in: 3600,
-                }),
+                  expires_in: mock.expiresIn,
+                })
+              },
             }),
           },
         },
@@ -54,7 +82,12 @@ async function installDrive(page: Page) {
         body: JSON.stringify(body),
         headers: { 'Access-Control-Allow-Origin': '*' },
       })
-    if (url.pathname.endsWith('/about'))
+    control.requests.push(url.pathname)
+    if (control.apiStatus !== 200) return respond({ error: 'unauthorized' }, control.apiStatus)
+    if (url.pathname.endsWith('/about')) {
+      await control.identityWait
+      if (control.identityStatus !== 200)
+        return respond({ error: 'auth unavailable' }, control.identityStatus)
       return respond({
         user: {
           permissionId: control.ownerId,
@@ -62,6 +95,7 @@ async function installDrive(page: Page) {
           emailAddress: 'alice@example.test',
         },
       })
+    }
     if (url.pathname.endsWith('/generateIds')) return respond({ ids: [`drive-${++id}`] })
     if (request.method() === 'POST') {
       let metadata: Omit<File, 'ownedByMe'>, content: unknown
@@ -114,6 +148,10 @@ async function connect(page: Page) {
   await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
   await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
 }
+async function restore(page: Page) {
+  await page.goto('/')
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+}
 async function createAccount(page: Page, name = '日常現金', balance = '1000') {
   await page.getByRole('link', { name: '我的帳戶', exact: true }).click()
   await page.getByRole('button', { name: '新增帳戶', exact: true }).click()
@@ -162,7 +200,7 @@ test('first use creates a book without root metadata and rediscovers it after lo
   expect(roots[0].parents).toEqual(['root-id'])
   const originalIds = [...mock.files.keys()]
   await page.evaluate(() => localStorage.removeItem('choubo:binding:alice-user'))
-  await connect(page)
+  await restore(page)
   expect([...mock.files.keys()]).toEqual(originalIds)
   expect(mock.rootMetadataReads).toBe(0)
 })
@@ -176,7 +214,6 @@ test('a missing existing manifest stops reconnection without creating an empty r
   mock.files.delete(manifest.id)
   const originalIds = [...mock.files.keys()]
   await page.reload()
-  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
   await expect(page.getByText(/無法存取這份 Drive 資料/)).toBeVisible()
   expect([...mock.files.keys()]).toEqual(originalIds)
 })
@@ -187,7 +224,6 @@ test('moving an established app folder still stops reconnection', async ({ page 
   const root = [...mock.files.values()].find((f) => f.appProperties?.role === 'root')!
   root.parents = ['another-folder']
   await page.reload()
-  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
   await expect(page.getByText('Drive 資料夾已移動、刪除或失去權限，已停止提交')).toBeVisible()
 })
 
@@ -215,7 +251,7 @@ test('cloud account, two-line posting, persisted reload, and reversal', async ({
   expect(
     [...mock.files.values()].filter((f) => f.appProperties?.role === 'operation'),
   ).toHaveLength(2)
-  await connect(page)
+  await restore(page)
   await expect(page.locator('.balance-number')).toHaveText('800')
   await page.getByRole('button', { name: /早餐三明治.*200/ }).click()
   await page.getByRole('button', { name: '撤銷這筆紀錄' }).click()
@@ -257,7 +293,7 @@ test('offline drafts survive reload, remain non-posting, and render at 360px', a
   await expect(page.getByRole('button', { name: '確認入帳', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '保留草稿', exact: true }).click()
   await context.setOffline(false)
-  await connect(page)
+  await restore(page)
   await expect(page.locator('.balance-number')).toHaveText('1,000')
   await page.getByRole('link', { name: /^草稿/ }).first().click()
   await expect(page.getByRole('heading', { name: '早餐三明治' })).toBeVisible()
@@ -347,7 +383,10 @@ test('financial text is rendered as text and never executes markup', async ({ pa
   expect(await page.evaluate(() => Object.hasOwn(window, '__ledgerXss'))).toBe(false)
   await expect(page.locator('img[src="x"]')).toHaveCount(0)
   await page.reload()
-  await expect(page.getByText(payload, { exact: true })).not.toBeVisible()
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  await expect(page.getByText(payload, { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => Object.hasOwn(window, '__ledgerXss'))).toBe(false)
+  await expect(page.locator('img[src="x"]')).toHaveCount(0)
 })
 
 async function assertReadableSurface(page: Page) {
@@ -592,4 +631,222 @@ test('cross-currency transfer detail shows both legs and net fees', async ({ pag
   await expect(page.locator('.balance-number')).toHaveText('6,770')
   await page.getByLabel('總覽幣種').selectOption('USD')
   await expect(page.locator('.balance-number')).toHaveText('100')
+})
+
+test('session restore verifies Google before showing cache, preserves expiry and never requests OAuth again', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  const before = await page.evaluate(
+    (key) => JSON.parse(sessionStorage.getItem(key)!),
+    AUTH_SESSION_KEY,
+  )
+  let release!: () => void
+  mock.identityWait = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  mock.requests.length = 0
+  await page.goto('/')
+  await expect(page.getByText('正在恢復 Google Drive', { exact: true })).toBeVisible()
+  await expect(page.locator('.balance-number')).not.toBeVisible()
+  await expect(page.getByText('日常現金', { exact: true })).not.toBeVisible()
+  await expect.poll(() => mock.requests).toEqual(['/drive/v3/about'])
+  release()
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  await expect(page.locator('.balance-number')).toHaveText('1,000')
+  expect(mock.oauthCalls).toBe(1)
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(sessionStorage.getItem(key)!).expiresAt,
+      AUTH_SESSION_KEY,
+    ),
+  ).toBe(before.expiresAt)
+  expect([...mock.files.values()].filter((f) => f.appProperties?.role === 'root')).toHaveLength(1)
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('test-memory-token')
+  expect(JSON.stringify([...mock.files.values()])).not.toContain('test-memory-token')
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下載 JSON', exact: true }).click()
+  const download = await downloadPromise
+  const exported = JSON.parse(await readFile((await download.path())!, 'utf8'))
+  expect(exported.operations).toHaveLength(1)
+  expect(JSON.stringify(exported)).not.toContain('test-memory-token')
+  expect(JSON.stringify(exported)).not.toContain('auth-session')
+})
+
+for (const reason of ['expired', 'revoked', 'owner-mismatch'] as const) {
+  test(`session restore rejects ${reason} before loading data and preserves drafts and pending`, async ({
+    page,
+  }) => {
+    const mock = await installDrive(page)
+    await connect(page)
+    await createAccount(page)
+    await openExpense(page)
+    mock.failOperations = true
+    await page.getByRole('button', { name: '確認入帳', exact: true }).click()
+    await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible()
+    await page.getByRole('button', { name: '保留草稿', exact: true }).click()
+    const protectedData = await page.evaluate(() =>
+      Object.entries(localStorage)
+        .filter(([key]) => key.includes(':draft:') || key.includes(':pending:'))
+        .sort(),
+    )
+    expect(protectedData.length).toBeGreaterThan(0)
+    if (reason === 'expired')
+      await page.evaluate((key) => {
+        const saved = JSON.parse(sessionStorage.getItem(key)!)
+        saved.expiresAt = Date.now() - 1
+        sessionStorage.setItem(key, JSON.stringify(saved))
+      }, AUTH_SESSION_KEY)
+    if (reason === 'revoked') mock.identityStatus = 401
+    if (reason === 'owner-mismatch') mock.ownerId = 'bob-user'
+    mock.requests.length = 0
+    await page.goto('/')
+    await expect(page.getByRole('alert')).toContainText(
+      reason === 'owner-mismatch' ? '帳號與分頁暫存不符' : '授權已到期',
+    )
+    await expect(page.locator('.balance-number')).not.toBeVisible()
+    expect(mock.requests).toEqual(reason === 'expired' ? [] : ['/drive/v3/about'])
+    expect(mock.oauthCalls).toBe(1)
+    expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+    expect(
+      await page.evaluate(() =>
+        Object.entries(localStorage)
+          .filter(([key]) => key.includes(':draft:') || key.includes(':pending:'))
+          .sort(),
+      ),
+    ).toEqual(protectedData)
+  })
+}
+
+test('temporary identity failure preserves the unexpired grant and retries when online', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  mock.identityStatus = 503
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('暫時無法向 Google 驗證連線')
+  await expect(page.locator('.balance-number')).not.toBeVisible()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key) !== null, AUTH_SESSION_KEY)).toBe(
+    true,
+  )
+  mock.identityStatus = 200
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  await expect(page.locator('.balance-number')).toHaveText('1,000')
+  expect(mock.oauthCalls).toBe(1)
+})
+
+test('expiry while open stops posting, keeps the draft, and supports explicit reconnect', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  await page.clock.setFixedTime(Date.now() + 3_700_000)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(page.locator('main > [role="alert"]')).toContainText('授權已到期或失效')
+  await expect(page.getByRole('button', { name: '確認入帳', exact: true })).toBeDisabled()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  await page.getByRole('button', { name: '保留草稿', exact: true }).click()
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
+  await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
+  expect(mock.oauthCalls).toBe(2)
+  await page.getByRole('link', { name: /^草稿/ }).first().click()
+  await expect(page.getByRole('heading', { name: '早餐三明治' })).toBeVisible()
+})
+
+test('logout clears the grant and a late identity response cannot restore it', async ({ page }) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  let release!: () => void
+  mock.identityWait = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.goto('/#/settings')
+  await page.reload()
+  await expect(page.getByText('正在恢復 Google Drive', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '登出', exact: true }).click()
+  release()
+  await expect(page.getByText('尚未連接', { exact: true })).toBeVisible()
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  mock.requests.length = 0
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: '連接 Google Drive', exact: true })).toBeEnabled()
+  await expect(page.locator('.balance-number')).not.toBeVisible()
+  expect(mock.requests).toEqual([])
+  expect(mock.oauthCalls).toBe(1)
+})
+
+test('cancelled account switch removes the previous credential before opening OAuth', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await page.getByRole('link', { name: '設定', exact: true }).click()
+  mock.cancelOAuth = true
+  await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Google 授權視窗已關閉')
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  mock.requests.length = 0
+  await page.goto('/')
+  await expect(page.getByText('尚未連接', { exact: true })).toBeVisible()
+  expect(mock.requests).toEqual([])
+  expect(mock.oauthCalls).toBe(2)
+})
+
+test('blocked session storage falls back to memory with an explicit reload notice', async ({
+  page,
+}) => {
+  await installDrive(page)
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'sessionStorage', {
+      get: () => {
+        throw new DOMException('Blocked', 'SecurityError')
+      },
+    })
+  })
+  await connect(page)
+  await expect(page.getByRole('status')).toContainText('瀏覽器無法保存分頁授權')
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('test-memory-token')
+  await page.reload()
+  await expect(page.getByText('尚未連接', { exact: true })).toBeVisible()
+})
+
+test('a revoked live session clears its stored token and prevents further cloud writes', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  await createAccount(page)
+  await openExpense(page)
+  await page.getByRole('button', { name: '保留草稿', exact: true }).click()
+  mock.apiStatus = 401
+  await page.getByRole('button', { name: '重新同步', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('授權已到期或失效')
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  await expect(page.getByRole('button', { name: '重新同步', exact: true })).toBeDisabled()
+  await page.getByRole('link', { name: /^草稿/ }).first().click()
+  await page.getByRole('button', { name: '繼續編輯', exact: true }).click()
+  await expect(page.getByLabel('第 1 行金額', { exact: true })).toHaveValue('60')
+  await expect(page.getByRole('button', { name: '確認入帳', exact: true })).toBeDisabled()
+})
+
+test('an OAuth response without a usable lifetime is rejected instead of inventing an expiry', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  mock.expiresIn = 0
+  await page.goto('/')
+  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Google 授權未完成')
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), AUTH_SESSION_KEY)).toBeNull()
+  expect(mock.requests).toEqual([])
 })

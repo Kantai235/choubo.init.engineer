@@ -16,7 +16,9 @@ const isDevelopment = import.meta.env.DEV
         :disabled="book.connecting"
         @click="book.connect"
       >
-        <AppIcon name="cloud" />{{ book.connecting ? '正在連接…' : '連接 Google Drive' }}
+        <AppIcon name="cloud" />{{
+          book.restoring ? '正在恢復連線…' : book.connecting ? '正在連接…' : '連接 Google Drive'
+        }}
       </button>
       <RouterLink v-else-if="isDevelopment" class="button primary large" to="/settings"
         ><AppIcon name="settings" />設定 Google 連線</RouterLink

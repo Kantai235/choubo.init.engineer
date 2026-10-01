@@ -48,7 +48,7 @@ export function configuredClientId() {
   )
 }
 export const preloadGoogle = () => loadGoogle().catch(() => undefined)
-// Tokens are returned to the active session only. Never serialize this module.
+// Only AuthSessionStorage may persist this short-lived credential, after identity verification.
 export async function requestToken(
   clientId: string,
 ): Promise<{ token: string; expiresAt: number }> {
@@ -63,6 +63,9 @@ export async function requestToken(
         if (
           value.error ||
           !value.access_token ||
+          !Number.isFinite(value.expires_in) ||
+          !Number.isInteger(value.expires_in) ||
+          value.expires_in! <= 0 ||
           !value.scope?.split(' ').includes('https://www.googleapis.com/auth/drive.file')
         ) {
           reject(new Error('Google 授權未完成，請重新連接'))
@@ -70,7 +73,7 @@ export async function requestToken(
         }
         resolve({
           token: value.access_token,
-          expiresAt: Date.now() + (value.expires_in ?? 3600) * 1000,
+          expiresAt: Date.now() + value.expires_in! * 1000,
         })
       },
       error_callback: () => reject(new Error('Google 授權視窗已關閉或被瀏覽器阻擋，請重新連接')),

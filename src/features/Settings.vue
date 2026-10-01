@@ -55,6 +55,9 @@ function exportBook() {
               : '授權後，資料會放在你的 My Drive 根目錄「Choubo 記帳資料」資料夾。'
           }}
         </p>
+        <p class="muted">
+          同一分頁重整可自動恢復有效的授權；到期、失效或關閉分頁後可能需要重新連接。登出會清除此分頁的授權暫存。
+        </p>
         <div class="settings-actions">
           <button
             class="button primary"
@@ -62,11 +65,13 @@ function exportBook() {
             @click="store.connect"
           >
             {{
-              store.connecting
-                ? '正在連接…'
-                : store.identity
-                  ? '重新連接／切換帳號'
-                  : '連接 Google Drive'
+              store.restoring
+                ? '正在恢復連線…'
+                : store.connecting
+                  ? '正在連接…'
+                  : store.identity
+                    ? '重新連接／切換帳號'
+                    : '連接 Google Drive'
             }}</button
           ><a
             v-if="store.folderUrl"
@@ -75,7 +80,11 @@ function exportBook() {
             target="_blank"
             rel="noopener noreferrer"
             >查看 Drive 資料夾</a
-          ><button v-if="store.identity" class="text-button danger" @click="store.disconnect">
+          ><button
+            v-if="store.identity || store.connecting"
+            class="text-button danger"
+            @click="store.disconnect"
+          >
             登出
           </button>
         </div>
