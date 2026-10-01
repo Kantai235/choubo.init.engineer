@@ -63,3 +63,7 @@
 新增 sessionStorage 的 `choubo:auth-account:v1` 僅含 Client ID、ownerId、email 及格式版本，不含憑證，採嚴格 schema，不能用來證明已授權，不進 localStorage、Drive 偏好或匯出。此提示可跨 token 到期保留，登出／切帳號／Client ID 變更則清除；遲到回應不能重新保存。token 仍不進可序列化 Pinia 狀態。
 
 72 項單元／契約及 33 項隔離瀏覽器測試通過，包含續接 prompt／hint、所有者核對、取消／候選 401、原期限保留、兩種編輯器、pending 保護及登出競態。檢查本輪 staged diff、production dist 與所有提交的憑證掃描，並維持 pnpm audit 無已知漏洞；詳細掃描輸出留在忽略的 work/security。本輪沒有取得或記錄真實使用者 token，也不將模擬驗證當成真實 Google 全面驗收。
+
+## 2026-10-02：Drive 有界並行讀取
+
+本次只改讀取排程，單一列表最多四個請求，失敗等待在途讀取收斂且不發布部分資料；不更動 OAuth scope、憑證期限或儲存位置。77 單元／契約與 33 模擬 E2E 通過；pnpm audit 無已知漏洞。真實 Chrome 測試使用隔離命名的合成帳務；不將實際帳號電郵、Drive 資源識別、下載帳本或登入憑證寫入公開報告。

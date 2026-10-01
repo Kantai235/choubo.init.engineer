@@ -45,6 +45,29 @@ export const bindingSchema = z.object({
 })
 const fileFields = 'id,name,mimeType,ownedByMe,parents,trashed,appProperties'
 const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+
+// Keep reads bounded, preserve list order, and settle in-flight reads before
+// surfacing a failure. A failed scan must never publish a partial ledger.
+async function readConcurrently<T, R>(items: T[], read: (item: T) => Promise<R>): Promise<R[]> {
+  const result = new Array<R>(items.length)
+  let next = 0
+  let failed = false
+  const workers = Array.from({ length: Math.min(4, items.length) }, async () => {
+    while (!failed && next < items.length) {
+      const index = next++
+      try {
+        result[index] = await read(items[index]!)
+      } catch (error) {
+        failed = true
+        throw error
+      }
+    }
+  })
+  const settled = await Promise.allSettled(workers)
+  const failure = settled.find((item) => item.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
+  return result
+}
 export class DriveError extends Error {
   constructor(
     message: string,
@@ -225,13 +248,14 @@ export class DriveRepository implements CloudPort {
     private readonly local: LocalRepository,
   ) {}
   async checkBinding() {
-    for (const [id, parent, role] of [
+    const folders = [
       [this.binding.rootId, this.binding.rootParentId, 'root'],
       [this.binding.booksId, this.binding.rootId, 'books'],
       [this.binding.bookFolderId, this.binding.booksId, 'book-folder'],
       [this.binding.operationsId, this.binding.bookFolderId, 'operations'],
       [this.binding.draftsId, this.binding.bookFolderId, 'drafts'],
-    ] as const) {
+    ] as const
+    await readConcurrently([...folders], async ([id, parent, role]) => {
       const file = await this.client.meta(id)
       if (
         !file.ownedByMe ||
@@ -241,7 +265,7 @@ export class DriveRepository implements CloudPort {
         (parent && !file.parents?.includes(parent))
       )
         throw new Error('Drive 資料夾已移動、刪除或失去權限，已停止提交')
-    }
+    })
     const manifest = await this.client.meta(this.binding.manifestId)
     if (
       !manifest.ownedByMe ||
@@ -258,24 +282,19 @@ export class DriveRepository implements CloudPort {
   }
   async readOperations() {
     const files = await this.client.list(this.binding.operationsId, 'operation')
-    const result: Operation[] = []
-    // Bounded sequential reads keep Drive requests predictable in the first slice.
-    for (const file of files) {
+    return readConcurrently(files, async (file) => {
       const op = operationSchema.parse(await this.client.content(file.id))
       this.assertOwner(op)
-      result.push(op)
-    }
-    return result
+      return op
+    })
   }
   async readDrafts() {
     const files = await this.client.list(this.binding.draftsId, 'draft')
-    const result: Draft[] = []
-    for (const file of files) {
+    return readConcurrently(files, async (file) => {
       const draft = draftSchema.parse(await this.client.content(file.id))
       this.assertOwner(draft)
-      result.push(draft)
-    }
-    return result
+      return draft
+    })
   }
   async writeOperation(op: Operation) {
     this.assertOwner(op)

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DriveClient } from '../../src/infrastructure/drive'
-import { APP_ID } from '../../src/domain/model'
+import { DriveClient, DriveRepository } from '../../src/infrastructure/drive'
+import { APP_ID, type Book } from '../../src/domain/model'
+import { LocalRepository } from '../../src/infrastructure/local'
+import { at, createAccount, draft } from './fixtures'
 
 const client = () =>
   new DriveClient('memory-only', Date.now() + 60_000, new AbortController().signal)
@@ -138,5 +140,117 @@ describe('verified same-account token replacement', () => {
     )
     await existing.list('parent')
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer memory-only')
+  })
+})
+
+describe('bounded Drive scans', () => {
+  function repository() {
+    const book: Book = {
+      format: 'choubo.book',
+      schemaVersion: 1,
+      minWritableAppVersion: '0.1.0',
+      id: 'book',
+      ownerId: 'alice',
+      name: 'QA',
+      timeZone: 'Asia/Taipei',
+      createdAt: at,
+    }
+    const binding = {
+      rootParentId: 'root',
+      rootId: 'root-folder',
+      booksId: 'books',
+      bookFolderId: 'book-folder',
+      operationsId: 'operations',
+      draftsId: 'drafts',
+      manifestId: 'manifest',
+      bookId: book.id,
+    }
+    const drive = client()
+    const local = new LocalRepository(
+      {
+        length: 0,
+        getItem: () => null,
+        setItem: () => {},
+        removeItem: () => {},
+        key: () => null,
+      },
+      book.ownerId,
+      book.id,
+    )
+    return { drive, repo: new DriveRepository(book, binding, drive, local) }
+  }
+
+  it.each(['operations', 'drafts'] as const)(
+    'reads %s four at a time and preserves listing order',
+    async (kind) => {
+      const { drive, repo } = repository()
+      const values = Array.from({ length: 9 }, (_, i) =>
+        kind === 'operations' ? createAccount(`qa-${i}`) : draft(`qa-${i}`),
+      )
+      vi.spyOn(drive, 'list').mockResolvedValue(values.map((_, i) => ({ ...file, id: String(i) })))
+      const release = new Map<string, () => void>()
+      let active = 0,
+        maximum = 0
+      vi.spyOn(drive, 'content').mockImplementation(async (id) => {
+        active++
+        maximum = Math.max(maximum, active)
+        await new Promise<void>((resolve) => release.set(id, resolve))
+        active--
+        return values[Number(id)]
+      })
+      const reading = kind === 'operations' ? repo.readOperations() : repo.readDrafts()
+      await vi.waitFor(() => expect(release.size).toBe(4))
+      // Finish out of order to ensure array order is not completion order.
+      for (const i of [3, 2, 1, 0]) release.get(String(i))!()
+      await vi.waitFor(() => expect(release.size).toBe(8))
+      for (const i of [7, 6, 5, 4]) release.get(String(i))!()
+      await vi.waitFor(() => expect(release.size).toBe(9))
+      release.get('8')!()
+      expect(await reading).toEqual(values)
+      expect(maximum).toBe(4)
+    },
+  )
+
+  it.each(['operations', 'drafts'] as const)(
+    'rejects foreign %s without returning a partial scan',
+    async (kind) => {
+      const { drive, repo } = repository()
+      vi.spyOn(drive, 'list').mockResolvedValue([file, { ...file, id: 'foreign' }])
+      vi.spyOn(drive, 'content').mockImplementation(async (id) => ({
+        ...(kind === 'operations' ? createAccount() : draft('v1')),
+        ownerId: id === 'foreign' ? 'other-owner' : 'alice',
+      }))
+      await expect(
+        kind === 'operations' ? repo.readOperations() : repo.readDrafts(),
+      ).rejects.toThrow('資料不屬於目前帳本')
+    },
+  )
+
+  it('settles in-flight reads and stops scheduling new files after failure', async () => {
+    const { drive, repo } = repository()
+    vi.spyOn(drive, 'list').mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => ({ ...file, id: String(i) })),
+    )
+    const finish = new Map<string, () => void>()
+    let rejectFirst!: (reason: Error) => void
+    const content = vi.spyOn(drive, 'content').mockImplementation(async (id) => {
+      await new Promise<void>((resolve, reject) => {
+        finish.set(id, resolve)
+        if (id === '0') rejectFirst = reject
+      })
+      return createAccount(id)
+    })
+    let finished = false
+    const reading = repo.readOperations().catch((error: unknown) => {
+      finished = true
+      return error
+    })
+    await vi.waitFor(() => expect(finish.size).toBe(4))
+    rejectFirst(new Error('read failed'))
+    await Promise.resolve()
+    expect(finished).toBe(false)
+    for (const id of ['1', '2', '3']) finish.get(id)!()
+    expect(await reading).toEqual(new Error('read failed'))
+    expect(content).toHaveBeenCalledTimes(4)
   })
 })
