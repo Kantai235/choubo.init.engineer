@@ -253,4 +253,63 @@ describe('bounded Drive scans', () => {
     expect(await reading).toEqual(new Error('read failed'))
     expect(content).toHaveBeenCalledTimes(4)
   })
+
+  it.each(['operations', 'drafts'] as const)(
+    'reuses only unchanged %s versions and does not retain removed files',
+    async (kind) => {
+      const { drive, repo } = repository()
+      const value = kind === 'operations' ? createAccount() : draft('v1')
+      const listing = vi.spyOn(drive, 'list').mockResolvedValue([{ ...file, version: '1' }])
+      const content = vi.spyOn(drive, 'content').mockResolvedValue(value)
+      const read = () => (kind === 'operations' ? repo.readOperations() : repo.readDrafts())
+      const initial = await read()
+      initial[0]!.ownerId = 'mutated-consumer-copy'
+      expect((await read())[0]!.ownerId).toBe('alice')
+      expect(content).toHaveBeenCalledTimes(1)
+      expect(listing).toHaveBeenCalledTimes(2)
+      listing.mockResolvedValue([{ ...file, version: '2' }])
+      expect(await read()).toHaveLength(1)
+      expect(content).toHaveBeenCalledTimes(2)
+      listing.mockResolvedValue([])
+      expect(await read()).toEqual([])
+      listing.mockResolvedValue([{ ...file, version: '2' }])
+      await read()
+      expect(content).toHaveBeenCalledTimes(3)
+    },
+  )
+
+  it.each(['operations', 'drafts'] as const)(
+    'revalidates changed %s before replacing a cached record',
+    async (kind) => {
+      const { drive, repo } = repository()
+      const value = kind === 'operations' ? createAccount() : draft('v1')
+      const listing = vi.spyOn(drive, 'list').mockResolvedValue([{ ...file, version: '1' }])
+      const content = vi.spyOn(drive, 'content').mockResolvedValue(value)
+      const read = () => (kind === 'operations' ? repo.readOperations() : repo.readDrafts())
+      await read()
+      listing.mockResolvedValue([{ ...file, version: '2' }])
+      content.mockResolvedValue({ ...value, bookId: 'other-book' })
+      await expect(read()).rejects.toThrow('資料不屬於目前帳本')
+      content.mockResolvedValue({ ...value, schemaVersion: 999 })
+      await expect(read()).rejects.toThrow()
+      content.mockResolvedValue(value)
+      expect(await read()).toHaveLength(1)
+      expect(content).toHaveBeenCalledTimes(4)
+    },
+  )
+
+  it.each(['operations', 'drafts'] as const)(
+    'refetches %s without a server version',
+    async (kind) => {
+      const { drive, repo } = repository()
+      vi.spyOn(drive, 'list').mockResolvedValue([file])
+      const content = vi
+        .spyOn(drive, 'content')
+        .mockResolvedValue(kind === 'operations' ? createAccount() : draft('v1'))
+      const read = () => (kind === 'operations' ? repo.readOperations() : repo.readDrafts())
+      await read()
+      await read()
+      expect(content).toHaveBeenCalledTimes(2)
+    },
+  )
 })

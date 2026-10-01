@@ -18,6 +18,7 @@ const fileSchema = z.object({
   name: z.string(),
   mimeType: z.string(),
   ownedByMe: z.boolean(),
+  version: z.string().optional(),
   parents: z.array(z.string()).optional(),
   trashed: z.boolean().optional(),
   appProperties: z.record(z.string(), z.string()).optional(),
@@ -43,7 +44,7 @@ export const bindingSchema = z.object({
   manifestId: z.string(),
   bookId: z.string(),
 })
-const fileFields = 'id,name,mimeType,ownedByMe,parents,trashed,appProperties'
+const fileFields = 'id,name,mimeType,ownedByMe,version,parents,trashed,appProperties'
 const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 
 // Keep reads bounded, preserve list order, and settle in-flight reads before
@@ -241,6 +242,8 @@ export interface CloudPort {
   checkBinding(): Promise<void>
 }
 export class DriveRepository implements CloudPort {
+  private operationReads = new Map<string, { version: string; value: Operation }>()
+  private draftReads = new Map<string, { version: string; value: Draft }>()
   constructor(
     readonly book: Book,
     readonly binding: Binding,
@@ -282,18 +285,30 @@ export class DriveRepository implements CloudPort {
   }
   async readOperations() {
     const files = await this.client.list(this.binding.operationsId, 'operation')
-    return readConcurrently(files, async (file) => {
-      const op = operationSchema.parse(await this.client.content(file.id))
-      this.assertOwner(op)
-      return op
-    })
+    return this.readRecords(files, this.operationReads, (value) => operationSchema.parse(value))
   }
   async readDrafts() {
     const files = await this.client.list(this.binding.draftsId, 'draft')
+    return this.readRecords(files, this.draftReads, (value) => draftSchema.parse(value))
+  }
+  private readRecords<T extends { ownerId: string; bookId: string }>(
+    files: DriveFile[],
+    cache: Map<string, { version: string; value: T }>,
+    parse: (value: unknown) => T,
+  ) {
+    // Every scan still lists Drive. Its server-owned version changes on every
+    // file change; absence of that field always forces a fresh content read.
+    // This cache lives only in this verified owner/book repository instance.
+    const ids = new Set(files.map((file) => file.id))
+    for (const id of cache.keys()) if (!ids.has(id)) cache.delete(id)
     return readConcurrently(files, async (file) => {
-      const draft = draftSchema.parse(await this.client.content(file.id))
-      this.assertOwner(draft)
-      return draft
+      const cached = cache.get(file.id)
+      if (file.version && cached?.version === file.version) return structuredClone(cached.value)
+      const value = parse(await this.client.content(file.id))
+      this.assertOwner(value)
+      if (file.version) cache.set(file.id, { version: file.version, value: structuredClone(value) })
+      else cache.delete(file.id)
+      return value
     })
   }
   async writeOperation(op: Operation) {
