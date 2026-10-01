@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Choubo 資料與隱私說明</title>
+<style>body{font:16px/1.85 system-ui,sans-serif;color:#263244;background:#f4f7fa;margin:0;padding:32px 20px}main{max-width:760px;margin:auto;background:white;padding:32px;border-radius:16px}h1{font-size:28px}h2{font-size:20px;margin-top:28px}a{color:#305bd1}li{margin:8px 0}@media(max-width:480px){main{padding:20px}}</style>
+</head>
+<body><main>
+<a href="/">返回 Choubo</a>
+<h1>資料與隱私說明</h1>
+<p>更新日期：2026 年 10 月 2 日。適用於 choubo.init.engineer 的基礎記帳開發版。</p>
+<h2>資料放在哪裡</h2>
+<p>Choubo 是直接在瀏覽器執行的記帳網站，沒有集中儲存帳務的應用伺服器。帳戶、金額、分類、發票、備註、草稿及操作紀錄會儲存在你授權的 Google Drive「Choubo 記帳資料」資料夾。本機 localStorage 另外保存快取、草稿及尚待確認的提交。</p>
+<h2>Google 授權的用途</h2>
+<p>網站使用 Google Drive 的 drive.file 權限建立與讀寫應用檔案，並讀取當前 Drive 使用者識別、顯示名稱與電子郵件以辨識帳號。授權憑證只保留在目前頁面記憶體，不寫入本機儲存、帳本、匯出或 GitHub。資料不跨 Google 使用者共用；本機保留的資料依使用者與帳本分開。</p>
+<h2>第三方服務</h2>
+<p>Google 處理登入、授權及 Drive 儲存，GitHub Pages 提供網站靜態檔案，Cloudflare 管理網域 DNS。這些服務在提供連線時可能依各自政策處理網路請求資訊。Choubo 未加入廣告、行為分析或向開發者回傳帳務內容的追蹤服務。Google 登入程式由 Google 官方網域載入。</p>
+<h2>匯出、移除與保留</h2>
+<ul>
+<li>可在設定頁下載目前已載入資料的 JSON；此版尚未提供完整資源還原。</li>
+<li>登出只結束目前連線，不會刪除雲端檔案或本機草稿。清除可重建快取也會保留草稿及待確認提交。</li>
+<li>若要刪除所有資料，請先處理待確認提交，再於 Google Drive 移除應用資料夾，並在瀏覽器清除此網站的網站資料。清除前可自行匯出保留。</li>
+<li>可透過 Google 帳號的第三方連線設定撤銷授權；撤銷授權不會自動刪除既有檔案。</li>
+<li>本機資料未另加密；共用裝置的其他使用者若能操作相同瀏覽器設定檔，可能存取保留的網站資料。</li>
+</ul>
+<h2>聯絡與版本範圍</h2>
+<p>需要協助時，請使用 Google 授權畫面所列的使用者支援電子郵件。網站目前為開發版，信用帳單、分期、回饋及完整備份等功能仍待實作；自動帳務功能也不會實際移轉銀行款項。</p>
+<p><a href="https://policies.google.com/privacy" rel="noopener noreferrer">Google 隱私權政策</a> · <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener noreferrer">GitHub 隱私權聲明</a> · <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">Cloudflare 隱私權政策</a></p>
+</main></body></html>
