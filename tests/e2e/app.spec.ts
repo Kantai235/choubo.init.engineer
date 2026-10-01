@@ -20,20 +20,11 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function installDrive(page: Page) {
-  const files = new Map<string, File>([
-    [
-      'root-id',
-      {
-        id: 'root-id',
-        name: 'My Drive',
-        mimeType: 'application/vnd.google-apps.folder',
-        ownedByMe: true,
-        parents: [],
-      },
-    ],
-  ])
+  // drive.file can create/list app files in My Drive without granting access
+  // to the root folder's metadata. API responses contain real parent IDs.
+  const files = new Map<string, File>()
   let id = 0
-  const control = { failOperations: false, ownerId: 'alice-user', files }
+  const control = { failOperations: false, ownerId: 'alice-user', rootMetadataReads: 0, files }
   await page.addInitScript(() => {
     localStorage.setItem('choubo:google-client-id', 'test.apps.googleusercontent.com')
     Object.assign(window, {
@@ -87,12 +78,21 @@ async function installDrive(page: Page) {
       if (metadata.appProperties?.role === 'operation' && control.failOperations)
         return respond({ error: 'unavailable' }, 503)
       if (files.has(metadata.id)) return respond({ error: 'exists' }, 409)
-      files.set(metadata.id, { ...metadata, ownedByMe: true, content })
+      files.set(metadata.id, {
+        ...metadata,
+        parents: metadata.parents.map((parent) => (parent === 'root' ? 'root-id' : parent)),
+        ownedByMe: true,
+        content,
+      })
       return respond({ id: metadata.id })
     }
     const match = url.pathname.match(/\/files\/([^/]+)$/)
     if (match) {
-      const file = files.get(match[1] === 'root' ? 'root-id' : decodeURIComponent(match[1]))
+      if (['root', 'root-id'].includes(match[1])) {
+        control.rootMetadataReads++
+        return respond({ error: 'not found' }, 404)
+      }
+      const file = files.get(decodeURIComponent(match[1]))
       if (!file) return respond({ error: 'not found' }, 404)
       return respond(url.searchParams.get('alt') === 'media' ? file.content : file)
     }
@@ -101,7 +101,9 @@ async function installDrive(page: Page) {
       role = q.match(/key='role' and value='([^']+)'/)?.[1]
     return respond({
       files: [...files.values()].filter(
-        (f) => f.parents.includes(parent ?? '') && (!role || f.appProperties?.role === role),
+        (f) =>
+          f.parents.includes(parent === 'root' ? 'root-id' : (parent ?? '')) &&
+          (!role || f.appProperties?.role === role),
       ),
     })
   })
@@ -141,6 +143,46 @@ test('unauthorized onboarding and developer configuration are useful without exp
     animations: 'disabled',
   })
 })
+test('first use creates a book without root metadata and rediscovers it after losing the binding', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  expect(mock.rootMetadataReads).toBe(0)
+  const roots = [...mock.files.values()].filter((f) => f.appProperties?.role === 'root')
+  expect(roots).toHaveLength(1)
+  expect(roots[0].parents).toEqual(['root-id'])
+  const originalIds = [...mock.files.keys()]
+  await page.evaluate(() => localStorage.removeItem('choubo:binding:alice-user'))
+  await connect(page)
+  expect([...mock.files.keys()]).toEqual(originalIds)
+  expect(mock.rootMetadataReads).toBe(0)
+})
+
+test('a missing existing manifest stops reconnection without creating an empty replacement', async ({
+  page,
+}) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  const manifest = [...mock.files.values()].find((f) => f.appProperties?.role === 'manifest')!
+  mock.files.delete(manifest.id)
+  const originalIds = [...mock.files.keys()]
+  await page.reload()
+  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
+  await expect(page.getByText(/無法存取這份 Drive 資料/)).toBeVisible()
+  expect([...mock.files.keys()]).toEqual(originalIds)
+})
+
+test('moving an established app folder still stops reconnection', async ({ page }) => {
+  const mock = await installDrive(page)
+  await connect(page)
+  const root = [...mock.files.values()].find((f) => f.appProperties?.role === 'root')!
+  root.parents = ['another-folder']
+  await page.reload()
+  await page.getByRole('button', { name: '連接 Google Drive', exact: true }).click()
+  await expect(page.getByText('Drive 資料夾已移動、刪除或失去權限，已停止提交')).toBeVisible()
+})
+
 test('cloud account, two-line posting, persisted reload, and reversal', async ({ page }) => {
   const mock = await installDrive(page)
   await connect(page)
@@ -239,9 +281,7 @@ test('switching Google accounts hides all previous balances, drafts, and dialogs
   await page.getByRole('link', { name: '設定', exact: true }).click()
   mock.ownerId = 'bob-user'
   // The provider returns a separate Drive space for the newly selected owner.
-  const root = mock.files.get('root-id')!
   mock.files.clear()
-  mock.files.set('root-id', root)
   await page.getByRole('button', { name: '重新連接／切換帳號', exact: true }).click()
   await expect(page.getByText('已連接 Google Drive', { exact: true })).toBeVisible()
   await page.getByRole('link', { name: '總覽', exact: true }).click()

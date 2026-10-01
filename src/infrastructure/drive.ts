@@ -72,7 +72,7 @@ export class DriveClient {
       const messages: Record<number, string> = {
         401: 'Google 授權已到期，請重新連接',
         403: 'Drive 權限或儲存空間不足，請檢查 Google Drive',
-        404: '找不到原本的 Drive 資料，請確認資料夾未刪除',
+        404: '無法存取這份 Drive 資料，請確認檔案仍存在且已授權；既有帳本不會自動重建',
         409: '檔案已存在',
         429: 'Drive 暫時限制請求次數，請稍後重試',
       }
@@ -185,12 +185,18 @@ export class DriveClient {
     if (
       !confirmed.ownedByMe ||
       confirmed.trashed ||
-      !confirmed.parents?.includes(parent) ||
+      (parent !== 'root' && !confirmed.parents?.includes(parent)) ||
+      confirmed.mimeType !== metadata.mimeType ||
       confirmed.appProperties?.role !== role ||
       confirmed.appProperties?.bookId !== bookId ||
       confirmed.appProperties?.appId !== APP_ID
     )
       throw new Error('雲端檔案歸屬不符，已停止寫入')
+    // "root" is an API alias, not the real ID returned in File.parents.
+    // Verify membership with a scoped query instead of reading root metadata,
+    // which may be inaccessible with drive.file.
+    if (parent === 'root' && !(await this.list('root', role)).some((file) => file.id === id))
+      throw new Error('雲端資料夾不在 My Drive 根目錄，已停止寫入')
     if (value !== undefined && canonical(await this.content(id)) !== canonical(value))
       throw new Error('雲端檔案內容與本次提交不符，請保留草稿並重新同步')
   }
@@ -299,17 +305,22 @@ export class DriveRepository implements CloudPort {
 
 export async function openDrive(client: DriveClient, identity: Identity, storage: StoragePort) {
   const bootstrap = new LocalRepository(storage, identity.id, 'bootstrap')
-  async function folder(parent: string, role: string, name: string, bookId = ''): Promise<string> {
+  async function folder(
+    parent: string,
+    role: string,
+    name: string,
+    bookId = '',
+  ): Promise<DriveFile> {
     let matches = await client.list(parent, role)
     if (matches.length > 1)
       throw new Error('發現多個同用途資料夾，請先在 Drive 核對；網站不會自動合併或覆蓋')
-    if (matches.length === 1) return matches[0].id
+    if (matches.length === 1) return matches[0]
     const id = await bootstrap.fileId(`folder:${parent}:${role}`, () => client.generateId())
     await client.create(id, name, parent, role, bookId)
     matches = await client.list(parent, role)
     if (matches.length !== 1 || matches[0].id !== id)
       throw new Error('資料夾建立結果需要核對，請重新連接')
-    return id
+    return matches[0]
   }
   let binding: Binding
   let book: Book
@@ -318,10 +329,13 @@ export async function openDrive(client: DriveClient, identity: Identity, storage
     binding = bindingSchema.parse(JSON.parse(saved))
     book = bookSchema.parse(await client.content(binding.manifestId))
   } else {
-    const rootParentId = (await client.meta('root')).id
-    const rootId = await folder(rootParentId, 'root', 'Choubo 記帳資料')
-    const booksId = await folder(rootId, 'books', 'books')
-    const bookFolderId = await folder(booksId, 'book-folder', '我的帳本')
+    const rootFolder = await folder('root', 'root', 'Choubo 記帳資料')
+    const rootId = rootFolder.id
+    const rootParentId = rootFolder.parents?.[0]
+    if (!rootParentId || rootFolder.parents?.length !== 1)
+      throw new Error('無法確認 Choubo 資料夾的位置，請重新連接')
+    const booksId = (await folder(rootId, 'books', 'books')).id
+    const bookFolderId = (await folder(booksId, 'book-folder', '我的帳本')).id
     let manifests = await client.list(bookFolderId, 'manifest')
     if (manifests.length > 1) throw new Error('發現多份帳本識別，請先核對 Drive 資料')
     let manifestId = manifests[0]?.id
@@ -344,8 +358,8 @@ export async function openDrive(client: DriveClient, identity: Identity, storage
       if (manifests.length !== 1) throw new Error('帳本建立發生並發，請重新連接後核對')
     }
     book = bookSchema.parse(await client.content(manifestId))
-    const operationsId = await folder(bookFolderId, 'operations', 'operations', book.id)
-    const draftsId = await folder(bookFolderId, 'drafts', 'drafts', book.id)
+    const operationsId = (await folder(bookFolderId, 'operations', 'operations', book.id)).id
+    const draftsId = (await folder(bookFolderId, 'drafts', 'drafts', book.id)).id
     await folder(bookFolderId, 'snapshots', 'snapshots', book.id)
     await folder(bookFolderId, 'backups', 'backups', book.id)
     await folder(rootId, 'assets', 'assets')

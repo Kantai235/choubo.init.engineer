@@ -56,7 +56,7 @@ pnpm preview
 ```
 
 - `pnpm test`：十進位計算、領域規則、草稿與提交生命週期、Drive REST 契約。
-- `pnpm test:e2e`：真實瀏覽器執行 Vue 網站，攔截 GIS／Drive 網路回應；測試資料只存在測試程序。
+- `pnpm test:e2e`：真實瀏覽器執行 Vue 網站，攔截 GIS／Drive 網路回應；測試資料只存在測試程序。測試自啟獨立 `127.0.0.1:4175` 伺服器並以空 Client ID 環境變數覆寫 `.env.local`，不沿用開發伺服器。
 - Playwright 瀏覽器安裝若因網路失敗，可指定已安裝的 Chromium／Chrome 執行檔，使用獨立測試設定檔。例如此輪 macOS 驗證方式：
 
 ```sh

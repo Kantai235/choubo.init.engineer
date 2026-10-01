@@ -69,6 +69,43 @@ describe('Drive REST contracts', () => {
       client().create(file.id, file.name, 'parent', 'operation', 'book', {}),
     ).rejects.toThrow('歸屬不符')
   })
+  it('verifies a root alias using membership while Drive returns the actual parent ID', async () => {
+    const folder = {
+      ...file,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: ['actual-my-drive-id'],
+      appProperties: { appId: APP_ID, role: 'root', bookId: '' },
+    }
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response({ id: file.id }))
+      .mockResolvedValueOnce(response(folder))
+      .mockResolvedValueOnce(response({ files: [folder] }))
+    vi.stubGlobal('fetch', fetcher)
+    await client().create(file.id, 'Choubo 記帳資料', 'root', 'root', '')
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).parents).toEqual(['root'])
+    expect(new URL(fetcher.mock.calls[2][0]).searchParams.get('q')).toContain("'root' in parents")
+    expect(fetcher.mock.calls.some(([url]) => url.includes('/files/root?'))).toBe(false)
+  })
+  it('rejects a folder that is not found under the root alias', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(response({ id: file.id }))
+        .mockResolvedValueOnce(
+          response({
+            ...file,
+            mimeType: 'application/vnd.google-apps.folder',
+            appProperties: { appId: APP_ID, role: 'root', bookId: '' },
+          }),
+        )
+        .mockResolvedValueOnce(response({ files: [] })),
+    )
+    await expect(client().create(file.id, 'Choubo 記帳資料', 'root', 'root', '')).rejects.toThrow(
+      '不在 My Drive 根目錄',
+    )
+  })
   it('stops expired authorizations before sending a request', async () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)
