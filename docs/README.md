@@ -7,6 +7,7 @@
 - [開發與 Google Drive 設定](development/setup.md)：啟動、公開 Client ID、測試與靜態部署。
 - [實作進度與驗證紀錄](development/progress.md)：0.1.0 範圍、FR 對應、已知限制及後續項目。
 - [功能與 UI 核對報告](development/requirements-ui-audit.md)：逐模組與欄位對照、設計差異、現有功能修正及暗色模式。
+- [真實 Chrome／Drive 驗收](development/chrome-live-acceptance.md)：本人Chrome的實際帳務、同步、授權、UI結果與未完成項目。
 - [AT01～AT90 驗收矩陣](development/acceptance-matrix.csv)：每項原始情境、預期、現況與證據限制。
 - [首版介面方向](architecture/interface-direction.md)：視覺與操作設計。
 - [Codex 插件與工作流程配置](development/codex-plugins.md)：插件選型、已完成設定、來源限制及連線狀態。
