@@ -14,9 +14,11 @@
 
 - 初次程式提交 `2b2b07a` 已推送至 `main`。
 - [首次 Actions 執行](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36914090148) 的 verify-build 與 deploy 均成功；GitHub Ubuntu／Node 24 環境也通過單元、瀏覽器與建置驗證。
+- 調整 CI 後的提交 `486a98a` 也已[完整驗證及部署成功](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36915605615)，runner Chrome 154.0.8037.57 執行 7 項瀏覽器測試通過，測試耗時 23.4 秒。
 - Pages 已綁定 `choubo.init.engineer`。Cloudflare 已新增 CNAME、DNS only、TTL 自動；Cloudflare 權威 DNS、1.1.1.1 與 8.8.8.8 均解析至 `kantai235.github.io`。
+- 已新增 `_github-pages-challenge-Kantai235.choubo` TXT，並在 GitHub 個人 Pages 設定完成 `choubo.init.engineer` 所有權驗證，畫面顯示 Verified。需保留驗證紀錄，才能持續保護此網域。
 - HTTP 首頁回傳 200，含正確 Choubo HTML、production CSP 與編譯 assets。
-- GitHub 已受理 TLS 憑證申請；HTTPS 憑證核發與 Enforce HTTPS 尚待確認。未通過 TLS 驗證前不進行 Google 授權或帳務操作。
+- 截至 2026-10-02 03:40（Asia/Taipei），GitHub 已受理 TLS 憑證申請，狀態為 new；HTTPS 憑證核發與 Enforce HTTPS 尚待確認。未通過 TLS 驗證前不進行 Google 授權或帳務操作。
 - Google Cloud `choubo` 專案已建立，Google Drive API 已啟用；Google Auth 的名稱、支援信箱、External 測試對象與聯絡資訊已填妥，停在使用者資料政策同意步驟。OAuth Web client、測試帳號與 Actions Client ID 變數尚待完成，網站目前顯示連線設定未完成。
 
 ## 自動部署

@@ -17,6 +17,7 @@
 | production | CSP 限制 script／連線／frame，禁止 object／base；停用 source maps；開發用 Client ID 編輯與覆寫僅 DEV |
 | GitHub Actions | 固定 actions SHA、最小權限、PR 不部署、只上傳 dist、checkout 不保留 Git 憑證 |
 | 遠端持續檢查 | 已啟用 GitHub Secret scanning、Push protection、Dependabot alerts；啟用後查詢秘密與依賴漏洞警示均為 0 |
+| 網域所有權 | 透過 Cloudflare TXT 完成 GitHub `choubo.init.engineer` Verified domain；限制其他帳號使用此子網域發布 Pages |
 
 `scripts/check-sensitive-files.mjs` 在提交檔案／CI 檢查禁止檔名及常見 token／私鑰格式。執行 `node scripts/check-sensitive-files.mjs --staged` 可檢查即將提交的實際內容。掃描原始報告與備份只存放於已忽略的 `work/security/`。
 
