@@ -22,7 +22,7 @@
 - Google Cloud `choubo` 專案、Google Drive API、Google Auth 品牌／同意畫面、`drive.file` 範圍與 1 位測試使用者已設定。Web client 名稱為 `Choubo Web`；公開 Client ID 已設至 Actions repository variable 與忽略追蹤的 `.env.local`。未下載或保存 client secret。
 - OAuth 目前為 External／Testing，僅測試使用者可授權。正式公開給一般使用者前，需另完成 Google 應用發布設定；公開 GitHub repository 不代表 Google OAuth 已對所有人開放。
 
-- 注入 Client ID 後的 [Actions 部署](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36917433341) 驗證與部署均成功。正式站已出現可用的 Google Drive 按鈕；真實 Google popup 接受來源、測試帳號與 `drive.file`，進入授權確認頁，尚待使用者同意後驗證 Drive 寫入。
+- 注入 Client ID 後的 [Actions 部署](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36917433341) 驗證與部署均成功。正式站已出現可用的 Google Drive 按鈕；真實 Google popup 接受來源、測試帳號與 `drive.file`。首次 Drive 初始化曾遇到 root metadata 404，已由 `fb5a1dc` 修正；[修正版 Actions](https://github.com/Kantai235/choubo.init.engineer/actions/runs/36920540195) 通過 39 項單元及 10 項瀏覽器測試並部署。Chrome 正式站已完成真實授權與首次帳本初始化／同步，顯示「已連接 Google Drive」。
 
 ## 自動部署
 
